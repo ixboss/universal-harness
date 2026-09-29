@@ -110,13 +110,55 @@
     },
     "ReplayResponse": {
       "type": "object",
-      "required": ["events", "truncated"],
-      "description": "Response to session.replay with lastEventId. Returns events strictly after the cursor. If unavailable, the node instead returns an authoritative snapshot + reconciliation info.",
+      "required": ["events", "truncated", "unavailable"],
+      "description": "Response to session.replay with lastEventId. Returns durable events strictly after the cursor. If the durable store cannot serve beyond the cursor (retention exceeded, corrupted index, fresh install), the node sets unavailable=true and returns an authoritative RecoverySnapshot instead; clients reconcile from it and must never infer task state from the mere absence of events.",
       "additionalProperties": false,
       "properties": {
-        "events": { "type": "array", "items": { "description": "Envelopes with eventId." } },
+        "events": { "type": "array", "items": { "description": "Envelopes with eventId; durable events only." } },
         "truncated": { "type": "boolean" },
-        "nextCursor": { "type": ["integer", "null"] }
+        "nextCursor": { "type": ["integer", "null"] },
+        "unavailable": {
+          "type": "boolean",
+          "description": "true when the node cannot serve events beyond the given cursor. Clients must then rely on the provided RecoverySnapshot."
+        },
+        "snapshot": { "$ref": "#/$defs/RecoverySnapshot" }
+      }
+    },
+    "RecoverySnapshot": {
+      "type": "object",
+      "required": ["nodeId", "generatedAt", "tasks", "sessions"],
+      "description": "Authoritative point-in-time node state used when event replay is unavailable or after ambiguous crash windows. Doubles as the reconciliation baseline. Contains only task/session metadata, never conversation content.",
+      "additionalProperties": false,
+      "properties": {
+        "nodeId": { "$ref": "identifiers.schema.json#/$defs/NodeId" },
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["taskId", "state"],
+            "additionalProperties": false,
+            "properties": {
+              "taskId": { "$ref": "identifiers.schema.json#/$defs/TaskId" },
+              "state": { "enum": ["queued", "starting", "running", "recovering", "waiting", "completed", "failed", "cancelled"] },
+              "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId" },
+              "lastEventId": { "type": ["integer", "null"], "minimum": 1 },
+              "recovered": { "type": "boolean", "description": "true if the state was re-derived by the supervisor after an abnormal termination rather than read from a persisted record." }
+            }
+          }
+        },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["sessionId"],
+            "additionalProperties": false,
+            "properties": {
+              "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId" },
+              "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" }
+            }
+          }
+        }
       }
     }
   }

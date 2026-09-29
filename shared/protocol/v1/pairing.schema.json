@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://universal-harness.dev/protocol/v1/pairing.schema.json",
   "title": "Universal Protocol v1 — Pairing",
-  "description": "Short-lived QR-borne pairing, then challenge-response key exchange. Discovery is never authorization: a discovered node grants nothing until pairing completes.",
+  "description": "Hardened first-contact trust model (Phase 0.1). The QR payload binds the short-lived pairing token to the node's persistent cryptographic identity, so a stolen token cannot be replayed against a client by a different peer. Discovery (mDNS) never establishes trust.",
   "$defs": {
     "PairingPayload": {
-      "description": "Encoded in the QR code shown by `UniversalHarness pair`. NEVER contains a permanent secret.",
+      "description": "Encoded in the QR code shown by `UniversalHarness pair`. Contains NO permanent secret. The pairingToken is single-use and expires after ~60s. nodeIdentitySha256 and nodeCertSha256 cryptographically bind the token to the node identity the client must verify during the TLS handshake BEFORE any challenge-response or authorization.",
       "type": "object",
-      "required": ["v", "nodeId", "endpoint", "token", "expiresAt"],
+      "required": ["v", "nodeId", "endpoint", "token", "expiresAt", "nodeIdentitySha256", "nodeCertSha256"],
       "additionalProperties": false,
       "properties": {
         "v": { "const": 1 },
@@ -16,10 +16,23 @@
         "nodeName": { "type": "string" },
         "token": {
           "type": "string",
-          "description": "One-time, 60-second-lived random pairing bearer. Single-use; rotation each display."
+          "description": "One-time, ~60-second-lived random pairing bearer. Single-use; rotated on each display. Alone, it authorizes NOTHING."
         },
         "expiresAt": { "type": "string", "format": "date-time" },
-        "capabilities": { "$ref": "capabilities.schema.json#/properties/operations" }
+        "nodeIdentitySha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 over the node's persistent identity public key (DER). The client records this from the QR and compares it against the peer it connects to, BEFORE trust is established. Non-match => pairing MUST fail."
+        },
+        "nodeCertSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 over the DER encoding of the node's TLS certificate. Compared against the certificate presented during the TLS handshake."
+        },
+        "nodePublicKeyPem": {
+          "type": "string",
+          "description": "Optional: the identity public key itself. nodeIdentitySha256 is the binding artifact; this is advisory for UI display."
+        }
       }
     },
     "PairRequest": {
@@ -54,6 +67,18 @@
           "description": "Requested scopes; the node may grant a subset and records what was granted."
         }
       }
+    },
+    "PairingFailureCode": {
+      "type": "string",
+      "enum": [
+        "TOKEN_EXPIRED",
+        "TOKEN_CONSUMED",
+        "NODE_IDENTITY_MISMATCH",
+        "NODE_CERTIFICATE_MISMATCH",
+        "CHALLENGE_FAILED",
+        "PAIRED_AS_DIFFERENT_NODE"
+      ],
+      "description": "NODE_IDENTITY_MISMATCH / NODE_CERTIFICATE_MISMATCH: the peer's presented identity or certificate does not match the fingerprints bound in the scanned QR. Pairing MUST abort; the client must not store any trust for that peer. See the negative test NEG-PAIR-01 in docs/TESTING.md."
     },
     "DeviceRecord": {
       "description": "Node-side view of a paired device and its revocation state.",

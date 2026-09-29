@@ -5,9 +5,9 @@
 run anywhere — a USB stick, a desktop, an Android phone — and be controllable from an iPhone/iPad
 over the local network, with no cloud dependency.
 
-> **Status: Phase 0 — Architecture & Audit (complete, pending review).**
-> This repository currently contains *only* architecture documents, machine-readable protocol
-> schemas, and package skeletons. No functional implementation exists yet. See
+> **Status: Phase 0.1 complete — security & architecture hardening applied (awaiting review).**
+> This repository contains *only* architecture documents, machine-readable protocol schemas,
+> and package skeletons. No functional implementation exists yet. See
 > [docs/ROADMAP.md](docs/ROADMAP.md). **Phase 1 has not started.**
 
 ## What Universal Harness is
@@ -49,7 +49,12 @@ AI/execution layer — always unmodified, always driven through an adapter
 - **Node-authoritative tasks** — a task keeps running when the iPhone disconnects; missed
   events are replayed on reconnect ([ADR-005](docs/adr/ADR-005-node-authoritative-state.md)).
 - **LAN-first, offline-capable** — mDNS discovery, QR pairing, encrypted authenticated
-  transport. No account, no relay, no hosted database ([ADR-006](docs/adr/ADR-006-lan-first-protocol.md)).
+  transport. Pairing binds the node's cryptographic identity into the QR payload, so a stolen
+  pairing token cannot be replayed by a different peer ([ADR-007](docs/adr/ADR-007-security-and-pairing.md)).
+  No account, no relay, no hosted database ([ADR-006](docs/adr/ADR-006-lan-first-protocol.md)).
+- **Crash-consistent tasks** — task-state transitions and durable events commit atomically;
+  eventId gaps are expected, replay is cursor-based, and snapshot fallback means a client can
+  never permanently infer a false task state ([ADR-005](docs/adr/ADR-005-node-authoritative-state.md)).
 - **Safe updates** — wrapper / Harness / runtime / toolchain update independently, staged and
   verified before activation, with rollback ([ADR-008](docs/adr/ADR-008-update-and-rollback.md)).
 - **Credentials never plaintext** — even though the workspace is portable
@@ -79,7 +84,7 @@ universal-harness/
 ```
 
 The *portable distribution layout* (what ends up on the USB stick) is defined in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#portable-distribution-layout).
+[docs/ARCHITECTURE.md §2](docs/ARCHITECTURE.md#2-portable-distribution-layout).
 
 ## Phase 0 documents
 
@@ -109,4 +114,4 @@ their own licenses, recorded with evidence in [THIRD_PARTY_NOTICES.md](THIRD_PAR
 
 Deepseek-Harness-Portable (techjarves) is used **as a design reference only**: it carries no
 license, so none of its source code is copied into this project. See
-[docs/AUDIT.md](docs/AUDIT.md#deepseek-harness-portable).
+[docs/AUDIT.md §3](docs/AUDIT.md#3-deepseek-harness-portable-repo-a--design-reference-only).

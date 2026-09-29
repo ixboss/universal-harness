@@ -199,15 +199,22 @@ trade-off — a restored backup prompts for re-authentication — is accepted.
 Relationships: `Project A → Session X → Task Y → owned by Node 1`. The iPhone observes and
 controls Task Y; it is not the owner (ADR-005).
 
-## 5. Security, discovery, and pairing (summary; PROTOCOL.md §5 detail)
+## 5. Security, discovery, and pairing (summary; PROTOCOL.md §4 detail)
 
 1. **Discovery ≠ authorization.** mDNS/Bonjour advertises `@universal-harness._tcp` with
-   *public* info only (node name, protocol version, capabilities).
-2. **Pairing** is a short-lived (60s) QR containing a one-time bearer token + node endpoint —
-   never a permanent secret. Completing pairing exchanges device keypairs over a
-   challenge-response; the node records the client's public key, name, platform, and scopes.
-3. **Authentication** is challenge-response with pinned device keypairs; transport is TLS with
-   per-node certificates (pinned by clients on first use).
+   *public* info only (node name, protocol version, capabilities). Discovery **never**
+   establishes trust — a discovered node grants nothing.
+2. **Pairing binds the node identity into the QR** (hardened in Phase 0.1, ADR-007). The QR
+   payload carries the short-lived (~60 s, single-use) token **plus** SHA-256 fingerprints of the
+   node's persistent identity public key and its TLS certificate. The client records the expected
+   identity *before connecting* and verifies the presented certificate/key against the QR binding
+   during the TLS handshake — **before** challenge-response, before scope grant, before any
+   `DeviceRecord` exists. A token stolen from the LAN therefore cannot complete pairing against a
+   different peer: mismatched identity fails closed (`NODE_IDENTITY_MISMATCH` /
+   `NODE_CERTIFICATE_MISMATCH`, negative test NEG-PAIR-01). Full normative flow and threat model:
+   [PROTOCOL.md §4](PROTOCOL.md#4-pairing-and-authentication-hardened-first-contact-trust).
+3. **Authentication** is challenge-response with pinned node identity (recorded from the QR at
+   pairing) and device keypairs; transport is TLS with per-node certificates.
 4. **Authorization scopes**: `read-only`, `project/session-control`, `task-control`,
    `file-modify`, `terminal`, `node-admin`, `update`. Terminal and node-admin require explicit
    grant; discovery grants nothing.
@@ -215,16 +222,30 @@ controls Task Y; it is not the owner (ADR-005).
    per-device last-seen. Revocation takes effect immediately for new connections and at the
    next event for live ones.
 
-## 6. Reconnect and missed-event recovery
+## 6. Event durability and reconnect/recovery (summary; PROTOCOL.md §5 detail)
 
-- Every node maintains an append-only **event log** with strictly monotonic `eventId`s.
-- Clients track `lastEventId`. On reconnect: authenticate → handshake (lastEventId, capabilities)
-  → node replays `lastEventId+1 … head` → then live stream.
-- If history is unavailable or beyond retention, the node returns an **authoritative snapshot**
-  plus reconciliation metadata (task states, session states); the client reconciles.
-- Duplicate events are deduplicated by `eventId`; ordering is per-node total.
-- Task state on disconnect is unchanged — the node keeps running (ADR-005). UI copy follows the
-  "disconnected ≠ stopped" pattern in the brief.
+Four event classes are distinguished by authority: **dsh live/transient events** (unreplayable),
+**dsh durable session events** (authoritative conversation transcript, JSONL/Zstd),
+**UH durable task events** (authoritative task lifecycle, our event store), and **UH live
+streaming events** (derived projections, never task-state authority). Every event kind carries a
+machine-readable durability class in
+[events.schema.json](../shared/protocol/v1/events.schema.json).
+
+- **eventId is assigned at durable append** and is strictly monotonic per node; live events never
+  consume ids, so **gaps are expected** — clients treat any id greater than their cursor as next.
+- **Task-state transitions and durable event appends are one atomic commit** (write-ahead); live
+  emission happens only after commit. No observable window can contain a completed task with no
+  `task.completed` event.
+- **Reconnect** = authenticate → `ReconnectHandshake { lastEventId }` → replay durable events to
+  head → live stream. Cursor beyond retention (or unavailable store) returns an authoritative
+  `RecoverySnapshot` with task/session states, including a `recovered` flag for supervisor-derived
+  states — so a client can never permanently infer a false task state from disconnect, delay,
+  crash, restart, or an unflushed event.
+- **Task state authority is the UH event store; conversation content authority is dsh's durable
+  session log**, accessed through the adapter (`session.read`).
+- Crash windows, recovery semantics, retention/compaction, and duplicate handling are specified
+  in [PROTOCOL.md §5](PROTOCOL.md#5-event-durability-crash-consistency-and-recovery); crash test
+  cases in [TESTING.md](TESTING.md).
 
 ## 7. Android execution node (ADR-003)
 
@@ -292,15 +313,19 @@ command with rationale.
 
 ## 11. Crash and recovery semantics
 
-Task state machine (node-owned): `queued → starting → running → recovering → completed |
-failed | cancelled`. There is no permanent "running": a supervisor reconciles process liveness
-against task records — on restart, orphaned `running` tasks are marked `failed` with a recovery
-record (or resumed where the harness supports resumption).
+Task state machine (node-owned): `queued → starting → running → recovering → waiting →
+completed | failed | cancelled`. There is no permanent "running": a supervisor reconciles
+process liveness against task records — on restart, orphaned `running` tasks are marked
+`recovering`, re-derived, and resolved to `failed` with a recovery record (or resumed where the
+harness supports resumption). State transitions and their durable events commit atomically, so a
+crash before persistence leaves the task at its last durable state — never a phantom terminal
+state (PROTOCOL.md §5.3).
 
-Handled scenarios: UH core crash, dsh crash (exit code + stderr captured, task → failed with
-details), PRoot crash (Android), device reboot, laptop sleep, process kill (SIGTERM/SIGINT per
-AUDIT §2.4), USB disconnect (tasks in progress flush or fail safely; never corrupt),
-network disconnect (tasks unaffected).
+Handled scenarios: UH core crash (supervisor re-derivation), dsh crash (exit code + stderr
+captured, task → failed with details), PRoot crash (Android), device reboot, laptop sleep,
+process kill (SIGTERM/SIGINT per AUDIT §2.4), USB disconnect (tasks in progress flush or fail
+safely; never corrupt), network disconnect (tasks unaffected), client disconnect mid-completion
+(task continues; client replays or snapshot-reconciles on reconnect).
 
 ## 12. USB failure handling
 

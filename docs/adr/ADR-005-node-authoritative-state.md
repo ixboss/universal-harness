@@ -17,14 +17,27 @@ and it cannot be the client or the harness.
 **Execution nodes are the authoritative owners of active task state.** Concretely:
 
 - Tasks live in the node's durable task store with a state machine:
-  `queued → starting → running → recovering → completed | failed | cancelled`.
+  `queued → starting → running → recovering → waiting → completed | failed | cancelled`.
+- **Durability contract** (Phase 0.1, machine-enforced): task-state transitions and their durable
+  event appends are **one atomic write-ahead commit**, and eventId is assigned **at append time**.
+  Live-stream events are emitted only post-commit and carry no eventId. Therefore no client can
+  observe a task in a terminal state without a durable terminal event — a crash before persistence
+  leaves the task at its last durable state rather than a phantom outcome (PROTOCOL.md §5.2/§5.3).
+- **Four event classes with explicit authority** (PROTOCOL.md §5.1): UH durable task events are the
+  authority for task lifecycle; dsh durable session events are the authority for conversation
+  content; dsh live events and UH live streaming events are never task-state authority.
+- **eventId gaps are allowed** (live events consume no ids); ordering is per-node total; duplicates
+  are de-duplicated by eventId. Reconstructing "next" from id arithmetic is forbidden — any id
+  greater than the cursor is next.
 - Cancellation is node-implemented: SIGTERM with a bounded wait, then force kill; the **node**
   records the outcome. We do not wait for a harness cancellation event that never comes.
 - A supervisor reconciles process liveness against task records on every start, reconnect, and
-  restart — orphaned `running` tasks become `failed` with a recovery record (or resume where
-  resumption is supported). No permanent `running` is possible.
-- Clients receive state via the event stream; on reconnect they replay missed events
-  (`session.replay`) or reconcile from an authoritative snapshot.
+  restart — orphaned `running` tasks become `recovering`, then `failed` with a recovery record (or
+  resume where resumption is supported). No permanent `running` is possible.
+- Clients receive state via the event stream; on reconnect they replay durable events from their
+  `lastEventId` cursor; when the store cannot serve the cursor, they reconcile from an
+  **authoritative `RecoverySnapshot`** (task/session states, `recovered` flag for
+  supervisor-derived states) — never by inferring state from event absence.
 - `Project A → Session X → Task Y → owned by Node 1`: the iPhone observes and controls Task Y,
   it never owns it (entity model in ARCHITECTURE §4.5).
 
@@ -48,6 +61,7 @@ and it cannot be the client or the harness.
 
 ## Risks
 
-- Node crash mid-task: mitigated by supervisor reconciliation and recovery state (R-11).
-- Event-log loss: mitigated by checksummed append-only frames and snapshot fallback; worst
-  case is reconciliation, not silent corruption.
+- Node crash mid-task: mitigated by atomic state/event commits and supervisor reconciliation
+  (R-11, R-17).
+- Event-log loss or retention exhaustion: mitigated by checksummed append-only frames and the
+  `RecoverySnapshot` fallback — worst case is reconciliation, not silent corruption (R-18).

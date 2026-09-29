@@ -4,7 +4,7 @@
   "title": "Universal Protocol v1 — Capability Object",
   "description": "Declared by a node during handshake and by a client during pairing. Clients must hide or disable operations the node does not support. Version negotiation: both sides send their supported protocolVersion range; the common version is used or the handshake fails with PROTOCOL_VERSION_MISMATCH.",
   "type": "object",
-  "required": ["nodeId", "platform", "architecture", "uhVersion", "dshVersion", "protocolVersionRange", "operations", "taskControls"],
+  "required": ["nodeId", "platform", "architecture", "uhVersion", "dshVersion", "protocolVersionRange", "operations", "taskControls", "pairingIdentityBinding"],
   "additionalProperties": false,
   "properties": {
     "nodeId": { "$ref": "identifiers.schema.json#/$defs/NodeId" },
@@ -24,6 +24,10 @@
       "type": "array",
       "description": "Operation kinds this node serves. Subset of the PROTOCOL.md operation catalog.",
       "items": { "$ref": "#/$defs/OperationKind" }
+    },
+    "pairingIdentityBinding": {
+      "const": true,
+      "description": "v1 nodes MUST bind pairing tokens to their persistent node identity: the QR payload carries SHA-256 fingerprints of the node identity key and TLS certificate (pairing.schema.json PairingPayload). First-contact trust derives from the scanned QR binding, never from discovery."
     },
     "taskControls": {
       "type": "object",

@@ -17,16 +17,34 @@ diagnostics, QR codes, and Git repositories.
 **Four strictly separated stages: discovery → pairing → authentication → authorization.**
 
 1. **Discovery** (mDNS) publishes public metadata only (node name, platform hint, protocol
-   versions). Discovering a node grants **nothing**.
-2. **Pairing** is QR-borne, 60-second-lived, single-use tokens (never a permanent secret);
-   completion exchanges long-lived device identity keypairs (client-generated, stored in
-   iOS Keychain / Android Keystore / desktop vault) and records a `DeviceRecord` with name,
-   platform, pubkey, granted scope subset, paired-at, last-seen.
-3. **Authentication** is per-connection signed challenge-response; transport is TLS with
-   per-node certificates pinned at first successful pairing (TOFU, recorded per device).
+   versions). Discovering a node grants **nothing** — a client never trusts a node it discovered
+   without either a prior pairing record or a fresh QR binding.
+2. **Pairing** is QR-borne, 60-second-lived, single-use tokens (never a permanent secret) that are
+   **cryptographically bound to the node's persistent identity**: the QR payload carries
+   `nodeIdentitySha256` (SHA-256 of the node identity public key) and `nodeCertSha256` (SHA-256 of
+   the node TLS certificate), per [pairing.schema.json](../../shared/protocol/v1/pairing.schema.json).
+   The client records the expected identity **from the QR before connecting**, verifies the
+   presented certificate/key during the TLS handshake, and only then proceeds to authentication.
+   Completion records a `DeviceRecord` (name, platform, given scopes subset, pairedAt, lastSeen).
+3. **Authentication** is per-connection signed challenge-response, using the node identity pinned
+   from the QR and the client's device keypair.
 4. **Authorization** is per-operation scope enforcement: `read-only`, `project-session-control`,
    `task-control`, `file-modify`, `terminal`, `node-admin`, `update`. Terminal and node-admin
    require explicit grant and are never defaulted.
+
+### Headline attack this closes
+
+> "An attacker obtains the short-lived QR pairing token but presents a different node
+> certificate/public key."
+
+Under the previous TOFU design, a captured token was sufficient to be trusted on first contact,
+because the client committed to a node identity only *after* connecting. The hardened flow makes
+the QR an **out-of-band commitment channel**: the client pins the expected node identity from the
+QR before opening any connection, and a peer whose presented identity or certificate differs
+fails closed with `NODE_IDENTITY_MISMATCH` / `NODE_CERTIFICATE_MISMATCH` — before authentication,
+before scope grant, before any `DeviceRecord` is created. Stealing the token no longer steals
+trust; only compromising the node's private key does. (Specified as negative test NEG-PAIR-01 in
+[TESTING.md](../TESTING.md).)
 
 Supporting rules:
 
@@ -58,6 +76,8 @@ Supporting rules:
 
 ## Risks
 
-- TOFU pinning is vulnerable to first-contact interception on hostile LANs (R-07) — mitigated
-  by QR being out-of-band and by revocation; documented as residual.
+- QR token capture combined with identity spoofing: closed by the QR identity binding (this
+  ADR, NEG-PAIR-01). Residual assumption: the QR is read optically (trusted display + camera);
+  a compromised node-side display or a maliciously QRed wrong key cannot be distinguished at
+  the protocol layer — recorded as R-07.
 - Secret redaction completeness — mitigated by leakage scanning tests (TESTING.md §3).

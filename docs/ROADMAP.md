@@ -6,10 +6,18 @@ document — only then continue. **Do not start the next phase without explicit 
 
 ---
 
-## Phase 0 — Architecture & Audit ✅ (this checkpoint)
+## Phase 0 — Architecture & Audit ✅
 
-Complete. Deliverables: AUDIT, REUSE-MAP, ARCHITECTURE, PROTOCOL, COMPATIBILITY, TESTING,
+Phase 0 (2026-09-29): AUDIT, REUSE-MAP, ARCHITECTURE, PROTOCOL, COMPATIBILITY, TESTING,
 RISK-REGISTER, 8 ADRs, machine-readable protocol schemas, package skeletons.
+
+**Phase 0.1 hardening pass (2026-09-29):** closed the first-pairing trust gap by binding node
+identity into the QR payload (ADR-007, PROTOCOL.md §4, negative tests NEG-PAIR-01…06); defined
+event durability and crash-consistency semantics with a machine-readable durability contract,
+atomic state/event commits, and snapshot fallback (ADR-005, PROTOCOL.md §5); strengthened the
+mandatory Windows x64 full-chain smoke gate and the Android real-device gate; extended the
+schema linter to enforce the durability contract. Documentation/schema/test-plan only — **no
+implementation**.
 
 **Definition of done:** the 29-item completion gate in §37 of the brief, mapped in the table
 below. Nothing functional implemented (item 29).
@@ -47,13 +55,22 @@ below. Nothing functional implemented (item 29).
 Portable filesystem, runtime manager, launcher, workspace management, session migration,
 diagnostics, reset, update system. Targets **Windows + Linux first, then macOS**.
 
+**Entry gate (Windows x64, mandatory, non-negotiable):** the real-environment full-chain smoke
+test of [TESTING.md §1a](TESTING.md#1a-phase-1-portable-execution-smoke-gate-windows-x64--mandatory) —
+bundled Node → pinned/integrity-verified dsh → native dependencies (`koffi`, `node-pty`) load →
+`dsh --profile sdk` → `initialize` → prompt → streaming events → durable session persistence →
+shutdown → restart → reopen/replay. The Windows row in
+[COMPATIBILITY.md](COMPATIBILITY.md#platform-matrix) stays **Not tested** until this passes;
+source-level evidence is necessary but never sufficient.
+
 Definition of done:
 
 - Fresh-install and second-launch paths work on Windows x64 and Linux x64 from a USB stick.
 - Migration round-trip (Win→Linux→Win) preserves sessions; conversation content byte-identical.
 - `doctor` reports all severities with actionable actions.
 - Update + rollback exercise on all four channels.
-- **R-01 gating test cannot run in Phase 1** — it stays open (see Phase 3).
+- **Windows full-chain smoke gate passes on a real Windows x64 machine** (R-19 closed).
+- **Android remains UNRESOLVED** (R-01) — no Android execution claim may be made in Phase 1.
 
 Exit criteria: automated desktop test suite green; migration test matrix green; logs inspected.
 
@@ -72,9 +89,16 @@ Import Mobile-Harness **with git history** into `android/` (approved approach); 
 all vendored licenses (R-08 closure); restructure into execution-node architecture; add device
 identity, pairing, protocol server, persistent background tasks.
 
-**Definition of done includes the R-01 gate:** real ARM64 smoke test
-(Node → dsh → prompt → streamed event → shutdown) passing. If it fails, the fallback in
-RISK-REGISTER.md applies and Android ships as client-first with deferred execution.
+**Definition of done includes the R-01 gate:** the real ARM64 full chain of
+[TESTING.md §2a](TESTING.md#2a-android-execution-full-chain-gate--mandatory-currently-unresolved) —
+app → PRoot → Ubuntu arm64 → bundled arm64 Node → dsh SDK → `initialize` → prompt → streaming
+event → durable session event → shutdown → restart → reconnect → session/task state recovery.
+A partial pass (PRoot + Node alone) is **not** success. If any stage fails, the exact blocker is
+documented (native modules / Node ABI / signals / filesystem behavior / PRoot limitations /
+permissions / background execution / process lifecycle / memory) and the fallback in
+RISK-REGISTER.md applies: Android ships client-first with local execution deferred and its
+COMPATIBILITY.md row stays **Unverified**. We do not claim support from Mobile-Harness's
+Claude Code path alone.
 
 ## Phase 4 — iOS Client
 

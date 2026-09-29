@@ -29,6 +29,47 @@
         "terminal.exited"
       ]
     },
+    "DurabilityClass": {
+      "type": "string",
+      "enum": ["durable", "live-only"],
+      "description": "durable: appended to the node's durable event store (writes receive a monotonic eventId, survive restart, and are replayable). live-only: emitted on the live stream only; never persisted; clients must not treat absence as task state. Durability is a per-kind contract property, not a wire field."
+    },
+    "EventDurability": {
+      "type": "object",
+      "description": "Machine-readable durability contract: every EventKind maps to exactly one DurabilityClass. Task lifecycle and session boundary events are durable; streaming content, terminal output, and transient status advice are live-only.",
+      "required": [
+        "task.queued", "task.started", "task.waiting", "task.completed", "task.failed", "task.cancelled",
+        "task.output", "task.reasoning", "task.tool_started", "task.tool_finished",
+        "session.created", "session.updated",
+        "device.status_changed", "node.state_changed", "diagnostics.issue",
+        "file.changed", "update.available", "update.applied", "sync.conflict",
+        "terminal.output", "terminal.exited"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "task.queued": { "$ref": "#/$defs/DurabilityClass", "const": "durable" },
+        "task.started": { "$ref": "#/$defs/DurabilityClass", "const": "durable" },
+        "task.waiting": { "$ref": "#/$defs/DurabilityClass", "const": "durable" },
+        "task.completed": { "$ref": "#/$defs/DurabilityClass", "const": "durable" },
+        "task.failed": { "$ref": "#/$defs/DurabilityClass", "const": "durable" },
+        "task.cancelled": { "$ref": "#/$defs/DurabilityClass", "const": "durable" },
+        "task.output": { "$ref": "#/$defs/DurabilityClass", "const": "live-only" },
+        "task.reasoning": { "$ref": "#/$defs/DurabilityClass", "const": "live-only" },
+        "task.tool_started": { "$ref": "#/$defs/DurabilityClass", "const": "live-only" },
+        "task.tool_finished": { "$ref": "#/$defs/DurabilityClass", "const": "live-only" },
+        "session.created": { "$ref": "#/$defs/DurabilityClass", "const": "durable" },
+        "session.updated": { "$ref": "#/$defs/DurabilityClass", "const": "durable" },
+        "device.status_changed": { "$ref": "#/$defs/DurabilityClass", "const": "live-only" },
+        "node.state_changed": { "$ref": "#/$defs/DurabilityClass", "const": "live-only" },
+        "diagnostics.issue": { "$ref": "#/$defs/DurabilityClass", "const": "durable" },
+        "file.changed": { "$ref": "#/$defs/DurabilityClass", "const": "durable" },
+        "update.available": { "$ref": "#/$defs/DurabilityClass", "const": "live-only" },
+        "update.applied": { "$ref": "#/$defs/DurabilityClass", "const": "durable" },
+        "sync.conflict": { "$ref": "#/$defs/DurabilityClass", "const": "durable" },
+        "terminal.output": { "$ref": "#/$defs/DurabilityClass", "const": "live-only" },
+        "terminal.exited": { "$ref": "#/$defs/DurabilityClass", "const": "durable" }
+      }
+    },
     "EventPayload": {
       "oneOf": [
         { "$ref": "#/$defs/TaskLifecycleEvent" },

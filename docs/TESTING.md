@@ -8,6 +8,40 @@ Nothing is marked Passed until a test actually passed and produced evidence.
 
 ## 1. Desktop
 
+### 1a. Phase 1 portable-execution smoke gate (Windows x64) — MANDATORY
+
+A **real-environment full-chain smoke test on a real Windows x64 machine**. Windows portable
+execution is **Not verified** (COMPATIBILITY.md) until every stage passes in order:
+
+1. **bundled Node** — the portable launcher starts the bundled Node from a relative path (no
+   system Node/pnpm/npm dependency)
+2. **pinned, integrity-verified dsh** — `@deepseek-ai/dsh` resolves from the private portable
+   prefix; hash matches the manifest
+3. **native dependencies load** — `koffi` and `node-pty` (and any other native module in the
+   manifest's `allowScripts`) load under the bundled Node's ABI
+4. **`dsh --profile sdk` starts** — SDK JSON-RPC application initializes
+5. **`initialize`** — the node's `initialize` frame is accepted; a session is created
+6. **prompt** — `session/prompt` is delivered; the agent begins a turn
+7. **streaming events** — live `agent/*`-derived events are received on the stream
+8. **durable session persistence** — the session log (JSONL/Zstd) is written with a valid
+   `SessionHeader` (`version`, `cwd`) and at least one durable event
+9. **shutdown** — SIGTERM-style graceful shutdown exits with the documented semantics
+10. **restart** — a fresh launcher invocation starts cleanly against the persisted state
+11. **reopen / replay session** — the persisted session reopens and replays content
+
+Verification-level distinction (never blur these):
+
+| Level | Meaning |
+|---|---|
+| **architecture planned** | described in docs only — not evidence |
+| **source-level evidence** | read from upstream/dependency source (e.g. AUDIT.md findings) |
+| **automated test** | runs in CI against a fixture/harness |
+| **real-platform verification** | the 1a full chain above, executed on a real Windows x64 host |
+
+Only after stage 11 passes does the Windows row in COMPATIBILITY.md advance.
+
+### 1b. Desktop scenario matrix
+
 | Scenario | Category | Notes |
 |---|---|---|
 | First install (clean setup) | automated | fixture drive, assert staging + manifest |
@@ -27,6 +61,25 @@ Nothing is marked Passed until a test actually passed and produced evidence.
 | Doctor | automated | all severities + recommended actions |
 
 ## 2. Android
+
+### 2a. Android execution full-chain gate — MANDATORY, currently UNRESOLVED
+
+dsh-on-Android is **not verified** — and is not claimed as verified — until this entire chain
+passes on a **real ARM64 Android device**:
+
+```
+Android app → PRoot → Ubuntu arm64 userspace → bundled arm64 Node → dsh (SDK)
+  → initialize → prompt → streaming event → durable session event → shutdown
+  → restart → reconnect → session/task state recovery
+```
+
+A partial pass (e.g. PRoot + Node only) is **not** success. If a stage fails, the exact blocker
+is documented (native modules / Node ABI / signals / filesystem behavior / PRoot limitations /
+permissions / background execution / process lifecycle / memory constraints) and Android local
+execution stays **unverified** (R-01). Source-plausibility from Mobile-Harness's Claude Code
+path is *not* evidence for this chain.
+
+### 2b. Android scenario matrix
 
 | Scenario | Category | Notes |
 |---|---|---|
@@ -59,6 +112,35 @@ Nothing is marked Passed until a test actually passed and produced evidence.
 | Terminal scope enforcement | automated | denial paths + audit logging |
 | Secret redaction in logs/diagnostics | automated | leakage scanning test |
 
+### 3a. Negative security tests (Phase 0.1 additions)
+
+| ID | Attack scenario | Expected result | Category |
+|---|---|---|---|
+| NEG-PAIR-01 | Attacker obtains the short-lived QR pairing token but presents a **different node certificate/public key** than the one bound in the QR | Pairing **MUST fail** with `NODE_IDENTITY_MISMATCH` / `NODE_CERTIFICATE_MISMATCH`; no authentication occurs, no scopes granted, no `DeviceRecord` created; the token is consumed (single-use) on the real node | automated |
+| NEG-PAIR-02 | Replay of an expired pairing token | `TOKEN_EXPIRED` | automated |
+| NEG-PAIR-03 | Replay of an already-consumed pairing token | `TOKEN_CONSUMED` | automated |
+| NEG-PAIR-04 | mDNS-discovered node with no QR/pairing record issues privileged commands | All operations denied (`AUTH_REQUIRED` / `SCOPE_DENIED`); discovery establishes no trust | automated |
+| NEG-PAIR-05 | Peer presents a certificate whose public key does not match the pinned node identity from a prior pairing | `PAIRED_AS_DIFFERENT_NODE`; connection refused | automated |
+| NEG-PAIR-06 | Client attempts pairing with a modified/invalid QR payload (missing identity fingerprints, malformed JSON) | Schema validation failure; pairing aborts without trust | automated |
+
+## 3b. Crash-consistency / event-durability tests (Phase 0.1 additions)
+
+These verify the §5 semantics of PROTOCOL.md: state-transition/event atomicity, supervisor
+re-derivation, and the no-false-task-state guarantee.
+
+| Scenario | Category | Expected result |
+|---|---|---|
+| Crash **before** event persistence | automated + fault injection | Task state after restart equals last durable state; no phantom terminal state; `RecoverySnapshot` marks it `recovered: true` if re-derived |
+| Crash **after** event persistence | automated | Event survives; replay delivers it; task state consistent |
+| Crash during task completion | automated | dsh process gone + unflushed commit ⇒ task resolves to `failed` with recovery record, never permanent `running` |
+| Client disconnect during task completion | automated | Task continues; client reconnects and receives the terminal event or snapshot |
+| Node restart followed by reconnect | automated | Supervisor reconciliation runs before serving; orphaned `running` tasks resolve; replay reflects reconciled truth |
+| Replay from a known event cursor | automated | Durable events strictly after cursor, in monotonic order; live events excluded |
+| Replay when cursor is outside retention | automated | `unavailable: true` + authoritative `RecoverySnapshot`; client reconciles without inferring state from absence |
+| Snapshot fallback | automated | Snapshot contains task/session metadata only (never conversation content); `recovered` flag accurate |
+| Duplicate / replayed events | automated | De-duplicated by eventId; no double-application of state |
+| eventId gap handling | automated | Live events consume no ids; client treats any id > cursor as "next" (no arithmetic assumptions) |
+
 ## 4. iOS client
 
 | Scenario | Category | Notes |
@@ -85,9 +167,13 @@ The brief is explicit: **if these workflows do not work reliably, the project is
 ## 6. Protocol schema conformance (Phase 0 executable)
 
 The JSON Schema files under `shared/protocol/v1/` are themselves testable immediately:
-a Phase 1 test validates sample envelope/event/operation fixtures against them, and all
-implementations (TypeScript core, Kotlin Android, Swift iOS) must pass the same fixture suite —
-guaranteeing the three stacks share one contract.
+
+- `node tests/protocol/lint-schemas.mjs` — validates that every cross-file `$ref` resolves
+  **and** that every `EventKind` maps to exactly one `DurabilityClass` (the machine-readable
+  durability contract). Passing today: 7 files, 62 refs, 0 problems.
+- A Phase 2 fixture suite validates sample envelope/event/operation payloads against the schemas
+  — identical fixtures shared by all three implementation stacks (TypeScript `core/`, Kotlin
+  `android/`, Swift `ios/`) so the contract is proven identical across them.
 
 ## 7. Migration robustness (specific invariants)
 
