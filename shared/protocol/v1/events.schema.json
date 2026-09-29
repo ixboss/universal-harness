@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://universal-harness.dev/protocol/v1/events.schema.json",
+  "title": "Universal Protocol v1 — Event Types",
+  "description": "Node-emitted events on the event stream. Each carries envelope.eventId (strictly monotonic per node) enabling missed-event replay after reconnect. Nodes are authoritative for all task/session state.",
+  "$defs": {
+    "EventKind": {
+      "enum": [
+        "task.queued",
+        "task.started",
+        "task.output",
+        "task.reasoning",
+        "task.tool_started",
+        "task.tool_finished",
+        "task.waiting",
+        "task.completed",
+        "task.failed",
+        "task.cancelled",
+        "device.status_changed",
+        "session.updated",
+        "session.created",
+        "node.state_changed",
+        "diagnostics.issue",
+        "file.changed",
+        "update.available",
+        "update.applied",
+        "sync.conflict",
+        "terminal.output",
+        "terminal.exited"
+      ]
+    },
+    "EventPayload": {
+      "oneOf": [
+        { "$ref": "#/$defs/TaskLifecycleEvent" },
+        { "$ref": "#/$defs/TaskContentEvent" },
+        { "$ref": "#/$defs/SessionEvent" },
+        { "$ref": "#/$defs/NodeEvent" },
+        { "$ref": "#/$defs/FileEvent" },
+        { "$ref": "#/$defs/UpdateEvent" },
+        { "$ref": "#/$defs/SyncEvent" },
+        { "$ref": "#/$defs/TerminalEvent" }
+      ]
+    },
+    "TaskLifecycleEvent": {
+      "type": "object",
+      "required": ["kind", "taskId", "state"],
+      "properties": {
+        "kind": { "enum": ["task.queued", "task.started", "task.waiting", "task.completed", "task.failed", "task.cancelled"] },
+        "taskId": { "$ref": "identifiers.schema.json#/$defs/TaskId" },
+        "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId" },
+        "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
+        "state": { "enum": ["queued", "starting", "running", "recovering", "waiting", "completed", "failed", "cancelled"] },
+        "reason": { "type": ["string", "null"] },
+        "exitCode": { "type": ["integer", "null"] },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "endedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "TaskContentEvent": {
+      "type": "object",
+      "required": ["kind", "taskId"],
+      "description": "Streaming agent output. Derived from live dsh SDK events; durable replay for transcripts is via session/event reads, not these ephemeral frames (mirrors upstream semantics).",
+      "properties": {
+        "kind": { "enum": ["task.output", "task.reasoning", "task.tool_started", "task.tool_finished"] },
+        "taskId": { "$ref": "identifiers.schema.json#/$defs/TaskId" },
+        "delta": { "type": "string" },
+        "toolName": { "type": "string" },
+        "toolCallId": { "type": "string" },
+        "approvalRequired": { "type": "boolean", "description": "true maps to task.waiting with an approval payload the client may accept/reject." }
+      }
+    },
+    "SessionEvent": {
+      "type": "object",
+      "required": ["kind", "sessionId"],
+      "properties": {
+        "kind": { "enum": ["session.created", "session.updated"] },
+        "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId" },
+        "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
+        "title": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "NodeEvent": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["device.status_changed", "node.state_changed", "diagnostics.issue"] },
+        "nodeId": { "$ref": "identifiers.schema.json#/$defs/NodeId" },
+        "status": { "enum": ["online", "offline", "degraded", "busy"] },
+        "diagnostic": { "type": "object", "description": "A diagnostics-records object when kind is diagnostics.issue." }
+      }
+    },
+    "FileEvent": {
+      "type": "object",
+      "required": ["kind", "projectId", "path"],
+      "properties": {
+        "kind": { "enum": ["file.changed"] },
+        "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
+        "path": { "type": "string" },
+        "change": { "enum": ["modified", "created", "deleted"] }
+      }
+    },
+    "UpdateEvent": {
+      "type": "object",
+      "required": ["kind", "channel"],
+      "properties": {
+        "kind": { "enum": ["update.available", "update.applied"] },
+        "channel": { "enum": ["universal-harness", "harness", "runtime", "toolchain", "rootfs"] },
+        "version": { "type": "string" },
+        "requiresAction": { "type": "boolean" }
+      }
+    },
+    "SyncEvent": {
+      "type": "object",
+      "required": ["kind"],
+      "description": "Emitted when a portable-workspace sync detects a conflict. Never auto-resolved.",
+      "properties": {
+        "kind": { "enum": ["sync.conflict"] },
+        "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
+        "path": { "type": "string" },
+        "versions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["source", "mtime", "hash"],
+            "properties": { "source": { "type": "string" }, "mtime": { "type": "string", "format": "date-time" }, "hash": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "TerminalEvent": {
+      "type": "object",
+      "required": ["kind", "terminalId"],
+      "description": "Terminal sessions are high-risk capabilities: require the 'terminal' scope, carry command/session ids, and are audit-logged with secret redaction.",
+      "properties": {
+        "kind": { "enum": ["terminal.output", "terminal.exited"] },
+        "terminalId": { "type": "string" },
+        "stream": { "enum": ["stdout", "stderr"] },
+        "delta": { "type": "string" },
+        "exitCode": { "type": ["integer", "null"] }
+      }
+    }
+  }
+}

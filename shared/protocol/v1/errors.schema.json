@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://universal-harness.dev/protocol/v1/errors.schema.json",
+  "title": "Universal Protocol v1 — Errors",
+  "description": "Structured errors. Every error names the condition, and where possible points to the diagnostic id or repair action.",
+  "$defs": {
+    "ErrorCode": {
+      "type": "string",
+      "enum": [
+        "AUTH_REQUIRED",
+        "AUTH_FAILED",
+        "CHALLENGE_FAILED",
+        "SCOPE_DENIED",
+        "DEVICE_REVOKED",
+        "PAIRING_EXPIRED",
+        "PAIRING_CONSUMED",
+        "PROTOCOL_VERSION_MISMATCH",
+        "CAPABILITY_UNSUPPORTED",
+        "NOT_FOUND",
+        "WORKSPACE_LOCKED",
+        "WORKSPACE_UNAVAILABLE",
+        "SESSION_SCHEMA_UNSUPPORTED",
+        "TASK_NOT_FOUND",
+        "TASK_ALREADY_DONE",
+        "CONFLICT",
+        "STORAGE_INSUFFICIENT",
+        "STORAGE_READ_ONLY",
+        "MIGRATION_REQUIRED",
+        "MIGRATION_FAILED",
+        "UPDATE_FAILED",
+        "INTERNAL_ERROR",
+        "UNAVAILABLE"
+      ]
+    },
+    "ErrorPayload": {
+      "type": "object",
+      "required": ["code", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "code": { "$ref": "#/$defs/ErrorCode" },
+        "message": {
+          "type": "string",
+          "description": "Safe, user-presentable message. Never contains secrets, paths to secrets, or stack traces."
+        },
+        "detail": {
+          "type": "string",
+          "description": "Safe supplemental detail for diagnostics."
+        },
+        "diagnosticId": { "type": "string", "description": "Links to the node's doctor diagnostics." },
+        "retryable": { "type": "boolean", "default": false },
+        "data": {
+          "type": "object",
+          "description": "Typed per-code payload, e.g. CONFLICT carries current remote version/hash.",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

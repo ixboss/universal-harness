@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://universal-harness.dev/protocol/v1/envelope.schema.json",
+  "title": "Universal Protocol v1 — Message Envelope",
+  "description": "Every Universal Protocol message is wrapped in this envelope. Versioned, request-correlated, timestamped.",
+  "type": "object",
+  "required": ["protocolVersion", "type", "timestamp"],
+  "additionalProperties": false,
+  "properties": {
+    "protocolVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Protocol major version. Clients and nodes negotiate this during pairing/handshake."
+    },
+    "requestId": {
+      "type": "string",
+      "description": "Correlates a response or event with the request that caused it. Client-generated for requests; echoed by the node.",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$"
+    },
+    "type": {
+      "type": "string",
+      "description": "Message type, e.g. 'request', 'response', 'event', 'error'. See message-types.schema.json.",
+      "enum": ["request", "response", "event", "error", "notification"]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 UTC timestamp. Node clock is authoritative for event ordering."
+    },
+    "eventId": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monotonic per-node event sequence. Present on events only. Basis of missed-event replay."
+    },
+    "payload": {
+      "description": "Typed payload. Schema selected by (type, payload.kind). See *.schema.json."
+    },
+    "trace": {
+      "$ref": "#/$defs/Trace",
+      "description": "Optional debugging/diagnostics correlation. Secrets are never included."
+    }
+  },
+  "$defs": {
+    "Trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "diagnosticId": { "type": "string" },
+        "nodeId": { "$ref": "identifiers.schema.json#/$defs/NodeId" }
+      }
+    }
+  }
+}

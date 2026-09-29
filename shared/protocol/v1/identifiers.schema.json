@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://universal-harness.dev/protocol/v1/identifiers.schema.json",
+  "title": "Universal Protocol v1 — Identifiers",
+  "description": "Canonical identifier formats shared across all message types.",
+  "$defs": {
+    "NodeId": {
+      "type": "string",
+      "description": "Stable execution-node identity, generated once per node and never reused.",
+      "pattern": "^node_[0-9a-f]{32}$"
+    },
+    "DeviceId": {
+      "type": "string",
+      "description": "Stable control-client identity, minted at pairing and recorded by the node.",
+      "pattern": "^device_[0-9a-f]{32}$"
+    },
+    "ProjectId": {
+      "type": "string",
+      "description": "Workspace-registry project identity (portable or external).",
+      "pattern": "^proj_[0-9a-f]{32}$"
+    },
+    "SessionId": {
+      "type": "string",
+      "description": "Harness session identity as tracked by the node.",
+      "pattern": "^sess_[0-9a-f]{32}$"
+    },
+    "TaskId": {
+      "type": "string",
+      "description": "Node-owned task identity. One task drives one session prompt series.",
+      "pattern": "^task_[0-9a-f]{32}$"
+    },
+    "ScopeToken": {
+      "type": "string",
+      "description": "Authorization scope granted to a paired device.",
+      "enum": [
+        "read-only",
+        "project-session-control",
+        "task-control",
+        "file-modify",
+        "terminal",
+        "node-admin",
+        "update"
+      ]
+    }
+  }
+}

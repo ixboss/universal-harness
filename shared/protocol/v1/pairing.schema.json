@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://universal-harness.dev/protocol/v1/pairing.schema.json",
+  "title": "Universal Protocol v1 — Pairing",
+  "description": "Short-lived QR-borne pairing, then challenge-response key exchange. Discovery is never authorization: a discovered node grants nothing until pairing completes.",
+  "$defs": {
+    "PairingPayload": {
+      "description": "Encoded in the QR code shown by `UniversalHarness pair`. NEVER contains a permanent secret.",
+      "type": "object",
+      "required": ["v", "nodeId", "endpoint", "token", "expiresAt"],
+      "additionalProperties": false,
+      "properties": {
+        "v": { "const": 1 },
+        "nodeId": { "$ref": "identifiers.schema.json#/$defs/NodeId" },
+        "endpoint": { "type": "string", "description": "https://host:port of the node server" },
+        "nodeName": { "type": "string" },
+        "token": {
+          "type": "string",
+          "description": "One-time, 60-second-lived random pairing bearer. Single-use; rotation each display."
+        },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "capabilities": { "$ref": "capabilities.schema.json#/properties/operations" }
+      }
+    },
+    "PairRequest": {
+      "type": "object",
+      "required": ["deviceName", "platform", "devicePublicKeyPem"],
+      "additionalProperties": false,
+      "properties": {
+        "deviceName": { "type": "string", "maxLength": 64 },
+        "platform": { "enum": ["ios", "android", "web", "desktop"] },
+        "devicePublicKeyPem": { "type": "string", "description": "Long-lived device identity key (client-generated, stored in Keychain/Keystore)." }
+      }
+    },
+    "PairChallenge": {
+      "type": "object",
+      "required": ["challengeB64"],
+      "additionalProperties": false,
+      "properties": {
+        "challengeB64": { "type": "string", "description": "Random nonce the client signs with its private key." },
+        "nodePublicKeyPem": { "type": "string" }
+      }
+    },
+    "PairResponse": {
+      "type": "object",
+      "required": ["deviceId", "sigB64"],
+      "additionalProperties": false,
+      "properties": {
+        "deviceId": { "$ref": "identifiers.schema.json#/$defs/DeviceId" },
+        "sigB64": { "type": "string", "description": "Signature over the challenge. Verified by the node before storing the client key." },
+        "requestedScopes": {
+          "type": "array",
+          "items": { "$ref": "identifiers.schema.json#/$defs/ScopeToken" },
+          "description": "Requested scopes; the node may grant a subset and records what was granted."
+        }
+      }
+    },
+    "DeviceRecord": {
+      "description": "Node-side view of a paired device and its revocation state.",
+      "type": "object",
+      "required": ["deviceId", "name", "platform", "scopes", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "deviceId": { "$ref": "identifiers.schema.json#/$defs/DeviceId" },
+        "name": { "type": "string" },
+        "platform": { "type": "string" },
+        "scopes": { "type": "array", "items": { "$ref": "identifiers.schema.json#/$defs/ScopeToken" } },
+        "status": { "enum": ["active", "revoked", "forgotten"] },
+        "lastSeenAt": { "type": ["string", "null"], "format": "date-time" },
+        "pairedAt": { "type": "string", "format": "date-time" },
+        "connected": { "type": "boolean" }
+      }
+    }
+  }
+}

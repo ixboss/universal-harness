@@ -1,0 +1,71 @@
+# Universal Harness — repository ignore rules
+# (Phase 0: repository sources only. Build artifacts rules are added per phase.)
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Portable runtime & downloaded bundles (never commit binaries)
+runtimes/
+toolchains/
+models/
+*.tar.xz
+*.zip
+*.tar.gz
+*.deb
+*.apk
+*.aab
+*.rootfs*
+*.iso
+
+# Portable mutable state (sample fixtures live under tests/fixtures/)
+data/
+cache/
+state/
+logs/
+temp/
+backups/
+manifest/staged/
+*.portable-backup
+*.lock
+
+# Credentials and secrets — never commit under any circumstances
+**/.credentials.yaml
+**/credentials*
+*.key
+*.pem
+*.p12
+secrets/
+.env
+.env.*
+
+# Build outputs
+dist/
+build/
+out/
+*.tsbuildinfo
+.gradle/
+.idea/
+.vscode/
+local.properties
+
+# Native build outputs
+third_party/**/build/
+*.so
+*.dylib
+*.dll
+*.exe
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test / coverage
+coverage/
+.nyc_output/
+*.lcov
+
+# Agent/tooling state (not deliverables)
+.zcode/
+.zcodeignore

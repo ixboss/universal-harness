@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://universal-harness.dev/protocol/v1/operations.schema.json",
+  "title": "Universal Protocol v1 — Operations",
+  "description": "Request/response operations. Each request carries a scope requirement; nodes enforce scope on every operation. Reconnect/replay is a first-class operation (session.replay) so clients recover missed events deterministically.",
+  "$defs": {
+    "ReconnectHandshake": {
+      "type": "object",
+      "required": ["deviceId", "lastEventId"],
+      "additionalProperties": false,
+      "properties": {
+        "deviceId": { "$ref": "identifiers.schema.json#/$defs/DeviceId" },
+        "lastEventId": { "type": ["integer", "null"], "minimum": 1, "description": "Client's last seen event id; null for a fresh client." },
+        "capabilities": { "description": "Client-side capability declaration." }
+      }
+    },
+    "TaskStartRequest": {
+      "type": "object",
+      "required": ["projectId"],
+      "additionalProperties": false,
+      "properties": {
+        "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
+        "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId", "description": "Omit to create a new session; supply to resume." },
+        "prompt": { "type": "string" },
+        "provider": { "type": ["string", "null"], "description": "Provider profile name; null = node default." },
+        "model": { "type": ["string", "null"] },
+        "priority": { "enum": ["background", "normal", "urgent"], "default": "normal" }
+      }
+    },
+    "TaskApproval": {
+      "type": "object",
+      "required": ["taskId", "approved"],
+      "additionalProperties": false,
+      "properties": {
+        "taskId": { "$ref": "identifiers.schema.json#/$defs/TaskId" },
+        "approved": { "type": "boolean" },
+        "toolCallId": { "type": "string" }
+      }
+    },
+    "FileWriteRequest": {
+      "type": "object",
+      "required": ["projectId", "path", "content"],
+      "description": "Optimistic concurrency: the client supplies baseVersion/baseHash from its last read; mismatch yields CONFLICT with the current remote state.",
+      "additionalProperties": false,
+      "properties": {
+        "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
+        "path": { "type": "string" },
+        "content": { "type": "string" },
+        "baseHash": { "type": ["string", "null"] },
+        "overwrite": { "type": "boolean", "default": false, "description": "Explicit overwrite; audited; still refuses to clobber a newer file silently." }
+      }
+    },
+    "FileReadResponse": {
+      "type": "object",
+      "required": ["content", "version", "hash"],
+      "additionalProperties": false,
+      "properties": {
+        "content": { "type": "string" },
+        "version": { "type": "integer", "description": "Monotonic file version on the node." },
+        "hash": { "type": "string", "description": "SHA-256 of content." },
+        "modifiedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "TerminalRequest": {
+      "type": "object",
+      "required": ["projectId", "command"],
+      "description": "Requires the 'terminal' scope. Command and session ids are audit-logged; output is redacted of known secret patterns. Bounded by timeoutMs.",
+      "additionalProperties": false,
+      "properties": {
+        "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
+        "command": { "type": "string" },
+        "cwd": { "type": ["string", "null"] },
+        "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+        "env": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Sanitized; never contains credentials from the vault." }
+      }
+    },
+    "DiagnosticsResult": {
+      "type": "object",
+      "required": ["checks"],
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DiagnosticRecord" }
+        }
+      }
+    },
+    "DiagnosticRecord": {
+      "type": "object",
+      "required": ["id", "severity", "component", "condition", "recommendedAction"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "description": "Stable diagnostic id, e.g. 'runtime.missing'." },
+        "severity": { "enum": ["ok", "warn", "fail"] },
+        "component": { "type": "string" },
+        "condition": { "type": "string", "description": "Human-readable finding. Redacted of secrets." },
+        "evidence": { "type": ["string", "null"] },
+        "recommendedAction": { "type": "string", "description": "Safe action text, possibly a repair command." },
+        "autoRepairSafe": { "type": "boolean" }
+      }
+    },
+    "UpdateApplyRequest": {
+      "type": "object",
+      "required": ["channel"],
+      "additionalProperties": false,
+      "properties": {
+        "channel": { "enum": ["universal-harness", "harness", "runtime", "toolchain", "rootfs"] },
+        "version": { "type": ["string", "null"], "description": "Target version; null = latest verified manifest entry." }
+      }
+    },
+    "ReplayResponse": {
+      "type": "object",
+      "required": ["events", "truncated"],
+      "description": "Response to session.replay with lastEventId. Returns events strictly after the cursor. If unavailable, the node instead returns an authoritative snapshot + reconciliation info.",
+      "additionalProperties": false,
+      "properties": {
+        "events": { "type": "array", "items": { "description": "Envelopes with eventId." } },
+        "truncated": { "type": "boolean" },
+        "nextCursor": { "type": ["integer", "null"] }
+      }
+    }
+  }
+}

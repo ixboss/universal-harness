@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://universal-harness.dev/protocol/v1/capabilities.schema.json",
+  "title": "Universal Protocol v1 — Capability Object",
+  "description": "Declared by a node during handshake and by a client during pairing. Clients must hide or disable operations the node does not support. Version negotiation: both sides send their supported protocolVersion range; the common version is used or the handshake fails with PROTOCOL_VERSION_MISMATCH.",
+  "type": "object",
+  "required": ["nodeId", "platform", "architecture", "uhVersion", "dshVersion", "protocolVersionRange", "operations", "taskControls"],
+  "additionalProperties": false,
+  "properties": {
+    "nodeId": { "$ref": "identifiers.schema.json#/$defs/NodeId" },
+    "platform": { "enum": ["windows", "linux", "macos", "android"] },
+    "architecture": { "enum": ["x64", "arm64"] },
+    "nodeKind": { "enum": ["desktop", "android"] },
+    "uhVersion": { "type": "string", "description": "Universal Harness semantic version of the node." },
+    "dshVersion": { "type": ["string", "null"], "description": "Pinned DeepSeek Harness version known good on this node; null if none installed." },
+    "protocolVersionRange": {
+      "type": "array",
+      "items": { "type": "integer" },
+      "minItems": 2,
+      "maxItems": 2,
+      "description": "[minSupported, maxSupported] inclusive."
+    },
+    "operations": {
+      "type": "array",
+      "description": "Operation kinds this node serves. Subset of the PROTOCOL.md operation catalog.",
+      "items": { "$ref": "#/$defs/OperationKind" }
+    },
+    "taskControls": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cancel": { "type": "boolean" },
+        "approveTool": { "type": "boolean", "description": "Interactive tool-call approvals (runtime bridging to dsh permission presets)." },
+        "pauseResume": { "enum": [false, "queued"], "description": "false: unsupported. 'queued': re-prompt queueing only (dsh has no pause primitive)." }
+      }
+    },
+    "storage": {
+      "$ref": "#/$defs/StorageInfo"
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pairing": { "type": "boolean", "description": "Node currently accepts pairing." },
+        "lanOnly": { "type": "boolean", "description": "Server bound to LAN only (default)." },
+        "updateable": { "type": "boolean" }
+      }
+    },
+    "diagnostics": { "type": "boolean" }
+  },
+  "$defs": {
+    "OperationKind": {
+      "enum": [
+        "device.pair",
+        "session.list",
+        "session.create",
+        "session.resume",
+        "project.list",
+        "project.create",
+        "project.open",
+        "task.start",
+        "task.list",
+        "task.cancel",
+        "file.browse",
+        "file.read",
+        "file.write",
+        "file.search",
+        "terminal.exec",
+        "terminal.cancel",
+        "log.stream",
+        "diagnostics.run",
+        "diagnostics.repair",
+        "update.check",
+        "update.apply",
+        "update.rollback",
+        "runtime.start",
+        "runtime.stop",
+        "sync.workspace",
+        "backup.create",
+        "backup.restore"
+      ]
+    },
+    "StorageInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "buckets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "bytes"],
+            "additionalProperties": false,
+            "properties": { "name": { "type": "string" }, "bytes": { "type": "integer", "minimum": 0 } }
+          }
+        },
+        "freeBytes": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
