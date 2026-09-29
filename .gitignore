@@ -6,6 +6,7 @@ node_modules/
 .pnpm-store/
 
 # Portable runtime & downloaded bundles (never commit binaries)
+runtime/
 runtimes/
 toolchains/
 models/
@@ -21,6 +22,8 @@ models/
 # Portable mutable state (sample fixtures live under tests/fixtures/)
 data/
 cache/
+diagnostics/
+*.part
 state/
 logs/
 temp/

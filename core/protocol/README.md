@@ -22,4 +22,4 @@ contract in [shared/protocol/v1/](../../shared/protocol/v1/), which remains the 
 
 ## Status
 
-Phase 0 — skeleton. Implementation is Phase 2.
+Phase 1 — still a skeleton. The Universal Protocol server is Phase 2; Phase 1 drives dsh directly over its own JSON-RPC seam (`core/adapter`).

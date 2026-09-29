@@ -1,0 +1,45 @@
+{
+  "$schema": "universal-harness.runtime.manifest.v1",
+  "schemaVersion": 1,
+  "name": "universal-harness-runtime",
+  "comment": "Deterministic, auditable runtime pin. Every hash below was obtained from the official checksum source named in checksumSource and is re-verified by `uh setup`/`uh doctor` before any bundled binary is executed. Do not pin a version by tag alone; a pin without a hash is not a pin.",
+  "node": {
+    "win-x64": {
+      "version": "v24.21.0",
+      "format": "zip",
+      "url": "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip",
+      "sha256": "158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541",
+      "checksumSource": "https://nodejs.org/dist/v24.21.0/SHASUMS256.txt",
+      "extractedRoot": "node-v24.21.0-win-x64",
+      "nodeRelPath": "node.exe"
+    },
+    "linux-x64": {
+      "version": "v24.21.0",
+      "format": "tar.xz",
+      "url": "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz",
+      "sha256": "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6",
+      "checksumSource": "https://nodejs.org/dist/v24.21.0/SHASUMS256.txt",
+      "extractedRoot": "node-v24.21.0-linux-x64",
+      "nodeRelPath": "bin/node"
+    },
+    "macos-arm64": {
+      "version": "v24.21.0",
+      "format": "tar.xz",
+      "url": "https://nodejs.org/dist/v24.21.0/node-v24.21.0-darwin-arm64.tar.xz",
+      "sha256": "6239d4cf92d864487ec8cd3615038f7b67e7f58b77b21cd2f09ea9fbd68065fe",
+      "checksumSource": "https://nodejs.org/dist/v24.21.0/SHASUMS256.txt",
+      "extractedRoot": "node-v24.21.0-darwin-arm64",
+      "nodeRelPath": "bin/node",
+      "verificationNote": "Code path supported; NOT verified on real Apple Silicon hardware (see docs/COMPATIBILITY.md)."
+    }
+  },
+  "dsh": {
+    "package": "@deepseek-ai/dsh",
+    "version": "0.2.0-rc.2",
+    "registry": "https://registry.npmjs.org",
+    "tarball": "https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-0.2.0-rc.2.tgz",
+    "integrity": "sha512-EAJ3gPNcVt/uv8X19PMm9NkVhWgT7xXNMk0UKCVm+IQ5rpSQOcsMUa0HWlnYYVybKMsccjcRB21vVVsaXQ6IdA==",
+    "shasum": "dfc8f7e09cfa96b854d6f0cf3a973ce7f2948925",
+    "installNote": "Installed by `uh setup` with the bundled Node's npm into runtime/dsh as an exact version pin (never a floating tag). Upstream dsh is used unmodified; Universal Harness only spawns it."
+  }
+}

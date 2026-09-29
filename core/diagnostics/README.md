@@ -27,4 +27,4 @@ Android runtime state (on Android) · update state.
 
 ## Status
 
-Phase 0 — skeleton. Implementation is Phase 1.
+Phase 1 — **implemented** (`mod.mjs`): 6 doctor check groups, live launch/initialize/shutdown probe, Expected/Actual/Action FAIL format, plaintext-secret scan, JSON report writer. **Automated-tested** (`tests/process.test.mjs` startup-failure, smoke chain).

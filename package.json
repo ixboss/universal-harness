@@ -1,0 +1,24 @@
+{
+  "name": "universal-harness",
+  "version": "0.1.0",
+  "description": "Portable desktop execution layer around the official DeepSeek Harness (dsh). Windows x64 / Linux x64.",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "uh": "bin/uh.mjs"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "doctor": "node bin/uh.mjs doctor"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin/",
+    "core/",
+    "manifests/",
+    "shared/",
+    "tests/"
+  ]
+}

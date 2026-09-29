@@ -26,4 +26,4 @@ control over a node's harness processes (ARCHITECTURE.md §3, PROTOCOL.md).
 
 ## Status
 
-Phase 0 — skeleton. Implementation is Phase 2 (desktop), Phase 3 (Android, in Kotlin).
+Phase 1 — still a skeleton. Phase 2 deliverable (desktop), Phase 3 (Android, in Kotlin).

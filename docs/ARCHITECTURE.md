@@ -1,8 +1,12 @@
 # Universal Harness — Architecture
 
-**Phase 0 deliverable.** Target architecture, state model, security model, and recovery
+**Phase 1 update (2026-09-29).** Target architecture, state model, security model, and recovery
 models. Companion documents: [PROTOCOL.md](PROTOCOL.md) (protocol detail),
 [ADR-001..008](adr/) (decision rationale), [RISK-REGISTER.md](RISK-REGISTER.md) (open risks).
+Sections §1–§19 remain the target architecture; the new **§20** records, per section, what Phase
+1 actually implemented and at which verification level (planned / source-level evidence /
+automated-tested / real-platform executed / NOT TESTED). Nothing below is described as working
+unless §20 says so.
 
 ---
 
@@ -403,3 +407,82 @@ instance, explains foreground-service mechanics, not stack traces.
 - PRoot is not a security boundary (AUDIT §4.5); sandbox policy stays upstream's.
 - Windows ARM64 / Linux ARM64 desktop / Intel macOS / musl Linux: unsupported (inherited scope).
 - iOS local execution: impossible, out of scope (ADR-002).
+
+---
+
+## 20. Phase 1 implementation status (2026-09-29)
+
+The Desktop Portable Core is implemented. Verification levels used below: **planned**,
+**source-level evidence**, **automated-tested** (in `node --test tests/*.test.mjs`, 41/41 pass),
+**real-platform executed** (on this Windows 11 Pro x64 host), **NOT TESTED**.
+
+### 20.1 Implemented layout (the concretization of §2)
+
+The on-disk layout delivered in Phase 1 (names per the brief §5; the §2 sketch above is the
+longer-term target with `toolchains/`, `models/`, `third_party-licenses/` arriving in later
+packaging phases):
+
+```
+Universal-Harness/                       (repository root = portable root)
+├── bin/
+│   ├── uh.mjs                           the `uh` CLI
+│   ├── UniversalHarness.cmd             Windows shim → bundled node
+│   └── UniversalHarness.sh              POSIX shim → bundled node
+├── manifests/
+│   └── runtime.manifest.json            pinned Node v24.21.0 per target (SHA-256) +
+│                                        pinned @deepseek-ai/dsh@0.2.0-rc.2 (SHA-512)
+├── core/                                (see README.md §"Repository layout" for the module map)
+├── runtime/                             lazy per-platform runtime (gitignored at rest)
+│   └── node/<target>/node-v24.21.0-…/   verified Node distribution
+│       └── node_modules/@deepseek-ai/dsh/   exact-pinned, integrity-recorded dsh
+├── data/                                portable state root
+│   ├── projects/    portable projects (workspace registry records them)
+│   ├── sessions/    UH session index (index.json); dsh's own logs live under $DSH_HOME
+│   ├── config/      portable config — never holds secrets
+│   ├── workspace/   workspace registry + identity markers
+│   ├── backups/     migration/restore backups with per-file checksums
+│   └── logs/        redacted JSONL logs
+├── diagnostics/                        doctor reports + smoke reports (gitignored at rest)
+└── tests/                              automated suite + protocol validators
+```
+
+Device-local state (never in the portable tree): the DPAPI-sealed credential blob under
+`%LOCALAPPDATA%\UniversalHarness` on Windows. On any platform without a secure-storage
+implementation the secret write **fails explicitly** (`SECURE_STORAGE_UNAVAILABLE`) rather than
+falling back to plaintext (brief §15).
+
+### 20.2 Per-section status
+
+| § | Area | Phase 1 status |
+|---|---|---|
+| 1 | System topology | Desktop half implemented: CLI/UI → UH Core → runtime manager → SDK adapter → unmodified `dsh --profile sdk` → bundled Node. The right half (Universal Protocol server, clients) is Phase 2+ — **not implemented**. |
+| 2 | Portable layout | **Implemented + automated-tested** (paths, root discovery, validation, relative-path resolution). Verified live on NTFS; exFAT no-symlink mode holds (no symlinks emitted). |
+| 3 | Desktop node | **Implemented**: shims exec the bundled node by relative path; `DSH_HOME` redirect; `setup/doctor/smoke/exec/migrate/backup/restore/workspace/session/runtime/version` commands. `serve`/`pair`/`web`/`update` are Phase 2/6 — not implemented. |
+| 4 | State model | Portable/device split **implemented + automated-tested** (secrets blob outside the tree; config-never-plaintext test). `$DSH_HOME` redirect means dsh's own state (sessions, settings) is portable by construction; UH owns only workspace/session *metadata*. |
+| 5 | Security/pairing | Pairing is Phase 2. Phase 1 delivered: redaction (logs, diagnostics, error context), DPAPI secure storage, doctor plaintext-secret scan — **automated-tested**. |
+| 6 | Event durability / recovery | The seam's events are `session.event`/`session.status` (source-verified + executed against real dsh). Task-level durable events and cursors are Phase 2. |
+| 7 | Android node | **Not implemented** — out of Phase 1 scope by the brief's boundary; R-01 stays unresolved. |
+| 8 | Update/rollback | **Not implemented** (Phase 6). Phase 1 carries the foundation only: pinned manifest, hash verification, whole-tree install-state hashing. |
+| 9 | Doctor/diagnostics | **Implemented**: 6 check groups, live launch/initialize/shutdown probe, Expected/Actual/Action FAIL format, JSON report to `diagnostics/` — **automated-tested** + executed on real Windows. |
+| 10 | Concurrency/locking | Not implemented (Phase 2): single-node desktop use only in Phase 1. |
+| 11 | Crash/recovery | Process-level: **implemented + automated-tested** (abnormal exit → pending requests rejected; bounded SIGTERM→SIGKILL; no orphans; exit-code + stderr capture). Task-level crash consistency is Phase 2. |
+| 12 | USB failure handling | Atomic-write discipline + append-only session reads; the full interrupted-write fault-injection matrix is a later hardening item. |
+| 14 | Migration | Workspace-level: move detection, recorded-root rewrite, backup-first, history — **automated-tested**. Cross-OS session-header rewrite: not implemented (needs a Linux host to test honestly). |
+| 19 | Limitations | Unchanged, plus two Phase 1 findings: upstream SDK has no session-resume over the seam (R-20, UH linked-continuation workaround); stage-10 smoke verification is blocked on provider credit (R-21). |
+
+### 20.3 The adapter seam (detail for implementers)
+
+`core/adapter/mod.mjs` is the **only** module that talks to dsh, over newline-delimited JSON-RPC
+on stdio (requests `initialize` / `session/prompt` / `shutdown`; notifications `session.event`,
+`session.status`, `subagent.started`, `subagent.finished`). dsh's stdout is reserved for protocol
+frames; non-JSON lines are tolerated and never crash the pump. Timeouts: startup 60s, initialize
+120s, shutdown 15s, terminate 10s (configurable). Shutdown is: request → natural-exit grace
+window → SIGTERM → bounded wait → SIGKILL → tree-wide kill (taskkill `/T /F` on Windows). The
+adapter never imports dsh internals; the runtime manager's `requireRuntime` gate means an
+unverified or missing runtime is refused **before** spawn.
+
+Session persistence is read-only from UH's side: dsh writes its own logs under `$DSH_HOME`
+(plain JSONL or concatenated Zstd frames with an immutable `SessionHeader`), and
+`core/sessions` decodes, indexes, replays them. UH writes no session internals — the only
+UH-authored session artifact is the metadata index (`data/sessions/index.json`, lineage
+`priorSessionId`), per the brief: *dsh owns dsh session internals.*

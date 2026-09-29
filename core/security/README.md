@@ -26,4 +26,4 @@ Device identity, pairing, authentication, authorization, and the credential vaul
 
 ## Status
 
-Phase 0 — skeleton. Implementation is Phase 1–2.
+Phase 1 — the desktop security portions are **implemented** elsewhere: `core/secrets` (Windows DPAPI, explicit failure on other platforms), `core/errors` redaction, `core/logging` redacted JSONL. All **automated-tested** (`tests/security.test.mjs`). Pairing/device-identity remain Phase 2.

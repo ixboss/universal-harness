@@ -25,4 +25,4 @@ Portable filesystem and workspace foundation for desktop execution nodes.
 
 ## Status
 
-Phase 0 — skeleton. Implementation is Phase 1.
+Phase 1 — **implemented** by `core/paths` + `core/platform` (root discovery, portable/device path split, relative-path canonicalization). The lock helpers here remain Phase 2 (single-node desktop use only in Phase 1).

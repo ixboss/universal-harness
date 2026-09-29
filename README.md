@@ -5,10 +5,15 @@
 run anywhere — a USB stick, a desktop, an Android phone — and be controllable from an iPhone/iPad
 over the local network, with no cloud dependency.
 
-> **Status: Phase 0.1 complete — security & architecture hardening applied (awaiting review).**
-> This repository contains *only* architecture documents, machine-readable protocol schemas,
-> and package skeletons. No functional implementation exists yet. See
-> [docs/ROADMAP.md](docs/ROADMAP.md). **Phase 1 has not started.**
+> **Status: Phase 1 complete — Desktop Portable Core implemented (awaiting review).**
+> Phase 0/0.1 delivered architecture, audit, protocol schemas, and skeletons. Phase 1 implements
+> the real desktop execution layer: bundled Node, pinned integrity-verified `@deepseek-ai/dsh`,
+> the SDK adapter, portable workspace/session management, diagnostics, and safe shutdown.
+> Verification status per platform is recorded honestly in
+> [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md): **Windows x64 real-machine smoke test executed
+> (14/15 stages pass; stage 10 blocked by the provider account's own quota, not by the harness
+> chain)**, **Linux x64 and macOS: NOT TESTED** (no Linux/macOS host available). Phase 2 has not
+> started. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## What Universal Harness is
 
@@ -64,27 +69,96 @@ AI/execution layer — always unmodified, always driven through an adapter
 
 ```
 universal-harness/
-├── docs/                  AUDIT, ARCHITECTURE, REUSE-MAP, PROTOCOL, COMPATIBILITY,
-│                          ROADMAP, TESTING, RISK-REGISTER, adr/ADR-001..008
-├── core/                  shared TypeScript core (runs on bundled Node):
-│   ├── protocol/          Universal Protocol message/event handling
-│   ├── portable/          portable paths, fs, workspace registry, locks
-│   ├── migration/         session/workspace path migration (schema-versioned)
-│   ├── update/            manifests, staged install, verify, rollback
-│   ├── diagnostics/       doctor checks (machine-readable)
-│   ├── security/          device identity, pairing, credential vault
-│   └── server/            execution-node WSS/HTTPS server
-├── desktop/               launcher + per-platform entry scripts (windows/linux/macos)
-├── android/               Android execution node (Phase 3: adapted Mobile-Harness)
-├── ios/                   iOS/iPadOS control client (Phase 4, Swift)
-├── shared/protocol/       machine-readable protocol contract (JSON Schema)
-├── scripts/               build / packaging / release helpers
-├── tests/                 cross-platform test suite
-└── third_party/           vendored components (with their LICENSE files)
+├── docs/                   AUDIT, ARCHITECTURE, REUSE-MAP, PROTOCOL, COMPATIBILITY,
+│                           ROADMAP, TESTING, RISK-REGISTER, adr/ADR-001..008
+├── bin/                     uh.mjs CLI + UniversalHarness.cmd / .sh launcher shims
+├── manifests/               runtime.manifest.json — pinned Node + dsh with hashes
+├── core/                    runtime manager, SDK adapter, workspace/sessions,
+│   ├── platform/            platform/arch detection and supported targets
+│   ├── paths/               portable root discovery + portable/device path split
+│   ├── integrity/           SHA-256 verification, timing-safe comparison
+│   ├── errors/              stable error codes, redaction, safe context
+│   ├── logging/             redacted JSONL logger
+│   ├── runtime/             manifest load/validate, status, download+verify+install
+│   ├── adapter/             dsh SDK JSON-RPC adapter (the only dsh seam)
+│   ├── workspace/           workspace registry + project index
+│   ├── sessions/            dsh session discovery, replay, UH session index
+│   ├── migration/           workspace move detection + recorded-root migration
+│   ├── backup/              backup/restore with per-file checksums
+│   ├── config/              portable config + device-local secret routing
+│   ├── secrets/             secure storage (Windows DPAPI; explicit fail elsewhere)
+│   ├── shutdown/            idempotent safe-shutdown manager + signal hooks
+│   ├── diagnostics/         doctor checks with Expected/Actual/Action reporting
+│   ├── cli/                 CLI modes (setup/doctor/smoke/exec) + metadata commands
+│   ├── protocol/            Universal Protocol message handling (Phase 2)
+│   ├── portable/            portable fs helpers, locks (Phase 2 expansion)
+│   ├── update/              staged update/rollback (Phase 6)
+│   └── server/              execution-node server (Phase 2)
+├── desktop/                 launcher + per-platform entry scripts (windows/linux/macos)
+├── android/                 Android execution node (Phase 3: adapted Mobile-Harness)
+├── ios/                     iOS/iPadOS control client (Phase 4, Swift)
+├── shared/protocol/         machine-readable protocol contract (JSON Schema)
+├── tests/                   automated suite (41 tests) + protocol validators
+└── third_party/             vendored components (with their LICENSE files)
 ```
 
 The *portable distribution layout* (what ends up on the USB stick) is defined in
 [docs/ARCHITECTURE.md §2](docs/ARCHITECTURE.md#2-portable-distribution-layout).
+
+## Phase 1 — what is implemented
+
+Implemented and automated-tested (41/41 tests pass, see [docs/TESTING.md](docs/TESTING.md)):
+
+- **Bundled runtime** — Node v24.21.0 per platform, downloaded from nodejs.org with SHA-256
+  verified *before* unpacking, and a whole-tree hash recorded on install so tampering is
+  detectable later. No system Node/npm/Python/Git is required.
+- **Pinned dsh** — `@deepseek-ai/dsh` 0.2.0-rc.2 installed through the bundled npm with an exact
+  pin; integrity recorded from the lockfile. dsh is spawned **unmodified** — never forked,
+  never patched ([ADR-001](docs/adr/ADR-001-deepseek-harness-engine.md)).
+- **SDK adapter** — the only seam to dsh: newline-delimited JSON-RPC over stdio against
+  `dsh --profile sdk` (`initialize` / `session/prompt` / `shutdown` + `session.event`,
+  `session.status`, `subagent.*` notifications). Locates, verifies, launches, initializes, sends
+  prompts, streams events, terminates with bounded escalation, recovers, and reports exit codes
+  and stderr. Non-protocol output on stdout is tolerated, never crashing the pump.
+- **Process lifecycle** — startup/init timeouts, graceful `shutdown` with a natural-exit grace
+  window before signal escalation, bounded SIGTERM→SIGKILL fallback, exit-code capture, and
+  tree-wide kill so no orphaned dsh processes survive.
+- **Portable state** — `data/{projects,sessions,config,workspace,backups,logs}` + `manifests/` +
+  `diagnostics/`; relative paths only; workspace registry + project index; session discovery and
+  replay reading dsh's own persistence format (plain JSONL and concatenated Zstd frames).
+- **Migration foundation** — a moved workspace is detected, recorded roots rewritten, a backup is
+  taken first, and history is retained.
+- **Security model, desktop portion** — stable error codes with actionable guidance; log and
+  diagnostics redaction; credentials routed to device-local secure storage (Windows DPAPI) and
+  **never** written as plaintext into the portable tree; on platforms without secure storage the
+  write **fails explicitly** rather than degrading to plaintext.
+- **Doctor** — machine-readable diagnostics with Expected/Actual/Action per failed check,
+  including a live launch/initialize/shutdown execution probe and a plaintext-secret scan.
+- **Safe shutdown** — idempotent shutdown manager with an ordered phase sequence and signal hooks.
+- **Launcher** — `bin/UniversalHarness.cmd` / `.sh` shims that exec the *bundled* node, and the
+  `uh` CLI (`setup`, `doctor`, `runtime`, `workspace`, `session`, `migrate`, `backup`, `restore`,
+  `exec`, `smoke`, `version`).
+
+Not in Phase 1 scope (by the brief's strict boundary): Android, PRoot, iOS, LAN discovery,
+pairing, the Universal Protocol server, remote control, cloud backend, event sync, distributed
+orchestration, Mobile-Harness import, and any dsh fork — none of these are implemented.
+
+## Verification levels (never blurred)
+
+| Level | Meaning |
+|---|---|
+| **planned** | described in documents only |
+| **source-level evidence** | read directly from upstream source (AUDIT.md) |
+| **automated-tested** | executed in the test suite against fixtures |
+| **real-platform verified** | the mandated full-chain smoke test passed on a real platform |
+
+Windows x64 is **not** marked fully verified: the real full chain was executed end to end on this
+Windows 11 x64 host (14/15 stages pass), but stage 10 (model completion) could not complete
+because the only available provider credential returns `Insufficient Balance (code QUOTA)` — a
+provider-account limitation, not a defect in the portable chain. That is reported as a failure,
+not papered over. Linux x64 and macOS are **NOT TESTED** — no Linux or macOS host is available
+(macOS Apple Silicon remains architecturally supported and explicitly unverified, which the
+brief accepts).
 
 ## Phase 0 documents
 

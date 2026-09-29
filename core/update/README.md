@@ -37,4 +37,4 @@ download → verify (SHA-256 or stronger) → stage → validate → activate (a
 
 ## Status
 
-Phase 0 — skeleton. Implementation is Phase 1.
+Phase 1 — **not implemented**. The foundation exists in `manifests/runtime.manifest.json` + hash verification + whole-tree install-state hashing (`core/runtime`); staged update/rollback remains a later phase.

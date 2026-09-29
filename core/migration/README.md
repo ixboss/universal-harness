@@ -29,4 +29,4 @@ recovery.
 
 ## Status
 
-Phase 0 — skeleton. Implementation is Phase 1.
+Phase 1 — **partially implemented** (`mod.mjs`): workspace move detection, recorded-root rewrite, backup-first apply, migration history + validation. **Automated-tested** (`tests/migration.test.mjs`). The cross-OS session-header rewrite (Zstd frame re-encode) is **not implemented** — deferred until it can be tested on a real second OS; dsh session internals remain owned by dsh (brief §7).

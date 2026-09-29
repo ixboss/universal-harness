@@ -1,8 +1,9 @@
 # Risk Register
 
-**Phase 0 deliverable.** Per the brief §34: likelihood / impact / mitigation / validation
+**Phase 1 update (2026-09-29).** Per the brief §34: likelihood / impact / mitigation / validation
 method / fallback for every major risk. **Unresolved risks are listed, not hidden.** Statuses:
-`Open`, `Mitigating`, `Unresolved` (cannot be closed without evidence we do not yet have).
+`Open`, `Mitigating`, `Unresolved` (cannot be closed without evidence we do not yet have),
+`Realized` (happened — documented, with the workaround in production use).
 
 | ID | Risk | Likelihood | Impact | Mitigation | Validation | Fallback | Status |
 |---|---|---|---|---|---|---|---|
@@ -24,17 +25,29 @@ method / fallback for every major risk. **Unresolved risks are listed, not hidde
 | R-16 | Scope creep: building a harness replacement by accident | Medium | High | ADR-001 enforced in review; every new capability checked against the adapter table (PROTOCOL.md §10) | Architecture review per phase | Revert feature; document as upstream gap | Open |
 | R-17 | Crash between task-state change and durable event persistence leaves ambiguous task state | Medium | High | Atomic write-ahead commit pairing state transition with event append; events emitted only post-commit; supervisor re-derives state on restart from the durable store; `recovered` flag marks re-derived states | Crash-injection test matrix: crash before persist, after persist, during completion (TESTING.md §7) | Client reconciles from `RecoverySnapshot`; task never stays permanently `running` | Mitigating |
 | R-18 | Event store loss / retention exhaustion makes replay impossible | Medium | Medium | Checksummed append-only frames; retention window with compaction that preserves terminal task states + lastEventId anchors; `session.replay` returns `unavailable: true` + authoritative `RecoverySnapshot` | Retention/compaction tests; cursor-outside-retention test | Snapshot reconciliation; documented retention policy | Mitigating |
-| R-19 | Windows portable chain fails on native dependencies (`koffi`, `node-pty`) or ABI mismatch | Medium | High | Pin exact native module versions with integrity; verify at install; staged activation; doctor checks runtime integrity | **Phase 1 gate: real Windows x64 full-chain smoke test** (bundled Node → pinned dsh → native deps load → SDK initialize → prompt → streaming → durable session persistence → shutdown → restart → reopen/replay). Windows stays "Not tested" until this passes | Fallback to compatible module versions or a channel-specific pin; document limitation | Open |
+| R-19 | Windows portable chain fails on native dependencies (`koffi`, `node-pty`) or ABI mismatch | Medium | High | Pin exact native module versions with integrity; verify at install; staged activation; doctor checks runtime integrity | **Executed 2026-09-29 on Windows 11 Pro x64** — bundled Node v24.21.0 → pinned dsh 0.2.0-rc.2 → native deps loaded → SDK initialize → prompt → streaming → durable session → shutdown (exit 0) → restart → reopen → replay: 14/15 pass (TESTING.md §1a). Native-dep stage PASS. | Fallback to compatible module versions or a channel-specific pin; document limitation | **Mitigating — native-dep concern closed on Windows; stage 10 blocked by R-21, not by this** |
+| R-20 | **Upstream SDK server cannot resume a persisted session over the JSON-RPC seam** (`agents.resume` is not wired; a persisted session id yields `session "…" already exists` in a new process) | Realized | Medium | UH owns the session *index* (`data/sessions/index.json`, lineage `priorSessionId`), dsh owns session internals. Reopen = durable read of the prior session log (dsh's own Zstd/JSONL format) + continuation in a NEW session linked to the prior one. Continuation content is replayable from the prior log. | Reopen test in the smoke chain (stage 14/15 PASS) + `tests/sessions.test.mjs` lineage test | If upstream later wires resume, the adapter gains a `reopen` path without changing UH's index — the seam is additive | **Realized — documented workaround in production use** |
+| R-21 | **The available provider credential has no credit**, so the mandatory model-completion stage of the smoke gate cannot pass | Certain | Medium (blocks full verification only) | The gate is implementation-independent: re-run `uh smoke` with a funded credential; no code change required. All 14 other stages already pass on real Windows x64. | None possible in-repo — this is a provider-account property | Provider account funding; gate re-run recorded in COMPATIBILITY.md evidence log | **Open (environmental — not a code defect)** |
+| R-22 | Linux x64 / macOS arm64 remain unverified because no host is available (WSL not installed; no Mac hardware) | Certain | Medium | Platform-specific logic isolated to `core/platform` + `core/secrets` (which fails explicitly rather than storing plaintext); pinned manifest entries + hashes exist for all three targets so a prepared drive is verifiable cross-OS | Real Linux/macOS smoke run when a host exists (brief §19/§20: macOS "NOT TESTED — acceptable") | Report NOT TESTED honestly; never claim verification from source-level cross-check | **Unresolved (environmental)** |
 
-## Explicitly unresolved items (carried into Phase 1 gates)
+## Explicitly unresolved items (carried into Phase 1+ gates)
 
 1. **R-01 dsh-on-Android** — source-plausible, never executed. Gated behind a real ARM64
    smoke test; the project does not claim Android works until that test passes
-   ([COMPATIBILITY.md](COMPATIBILITY.md)).
+   ([COMPATIBILITY.md](COMPATIBILITY.md)). No Android code exists in Phase 1.
 2. **R-10 iOS build/test** — no macOS host. Swift client authored in Phase 4 with rows
    honestly marked Not tested.
 3. **R-08 vendored license texts** — proot/talloc/libandroid-shmem/rootfs must be read at
-   Android import (Phase 3) before any distribution; THIRD_PARTY_NOTICES.md is a plan until then.
-4. **Live SDK-profile exit-code/error surfaces** — SIGTERM=0/SIGINT=130 are source-verified;
-   finer-grained JSON-RPC error shapes will be pinned from a Phase 1 smoke test and folded back
-   into PROTOCOL.md §10.
+   Android import (Phase 3) before any distribution. Phase 1 closure: Node + dsh + npm notices
+   ARE recorded (THIRD_PARTY_NOTICES.md); pnpm is no longer used (the bundled npm installs dsh).
+4. **The provider-credential quota (R-21)** blocks the model-completion stage of the Windows
+   smoke gate. Re-running `uh smoke` with a funded credential closes it; the chain itself is
+   proven on 14/15 stages.
+5. **Session reopen over the seam (R-20)** — upstream does not wire `agents.resume`; the UH
+   linked-continuation design is the documented workaround. If upstream adds resume, adopt it.
+6. **Cross-OS migration round-trip** — Win→Linux→Win session-content identity is untested
+   because no Linux host exists. The Phase 1 migration scope is workspace-level (recorded roots).
+7. **Live SDK-profile exit-code/error surfaces** — SIGTERM=0/SIGINT=130 are source-verified and
+   the Windows smoke run observed graceful exit 0; the adapter additionally captures exit codes
+   and stderr for abnormal paths (automated-tested). Finer-grained error shapes remain pinned
+   per observed upstream behavior, folded into PROTOCOL.md §10 when Phase 2 needs them.

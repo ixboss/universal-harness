@@ -1,33 +1,68 @@
 # Testing Strategy
 
-**Phase 0 deliverable.** Test matrix per [ARCHITECTURE.md](ARCHITECTURE.md) and the brief §30.
-Every scenario is categorized: **automated** (runs in CI, no device), **integration**
+**Phase 1 update (2026-09-29).** Test matrix per [ARCHITECTURE.md](ARCHITECTURE.md) and the brief
+§30. Every scenario is categorized: **automated** (runs in CI, no device), **integration**
 (harnessing real subsystems on a desktop), **real-device** (requires Windows/Linux/macOS/Android,
-and/or an iPhone), or **not yet testable** (blocking environment - see [COMPATIBILITY.md)](COMPATIBILITY.md).
-Nothing is marked Passed until a test actually passed and produced evidence.
+and/or an iPhone), or **not yet testable** (blocking environment - see
+[COMPATIBILITY.md](COMPATIBILITY.md)). Nothing is marked Passed until a test actually passed and
+produced evidence.
 
 ## 1. Desktop
 
 ### 1a. Phase 1 portable-execution smoke gate (Windows x64) — MANDATORY
 
-A **real-environment full-chain smoke test on a real Windows x64 machine**. Windows portable
-execution is **Not verified** (COMPATIBILITY.md) until every stage passes in order:
+A **real-environment full-chain smoke test on a real Windows x64 machine**, implemented as
+`uh smoke` and written to `diagnostics/smoke-<timestamp>.json`. Windows portable execution is
+**not verified** (COMPATIBILITY.md) until every stage passes in order:
 
 1. **bundled Node** — the portable launcher starts the bundled Node from a relative path (no
    system Node/pnpm/npm dependency)
-2. **pinned, integrity-verified dsh** — `@deepseek-ai/dsh` resolves from the private portable
-   prefix; hash matches the manifest
-3. **native dependencies load** — `koffi` and `node-pty` (and any other native module in the
-   manifest's `allowScripts`) load under the bundled Node's ABI
-4. **`dsh --profile sdk` starts** — SDK JSON-RPC application initializes
-5. **`initialize`** — the node's `initialize` frame is accepted; a session is created
-6. **prompt** — `session/prompt` is delivered; the agent begins a turn
-7. **streaming events** — live `agent/*`-derived events are received on the stream
-8. **durable session persistence** — the session log (JSONL/Zstd) is written with a valid
-   `SessionHeader` (`version`, `cwd`) and at least one durable event
-9. **shutdown** — SIGTERM-style graceful shutdown exits with the documented semantics
-10. **restart** — a fresh launcher invocation starts cleanly against the persisted state
-11. **reopen / replay session** — the persisted session reopens and replays content
+2. **verified runtime** — the Node tree hash matches the install record (tamper detection)
+3. **pinned, integrity-verified dsh** — `@deepseek-ai/dsh` 0.2.0-rc.2 resolves from the portable
+   prefix; lockfile integrity matches the manifest
+4. **native dependencies load** — dsh boots under the bundled Node's ABI (`koffi`, `node-pty`,
+   and everything else in dsh's own dependency tree)
+5. **`dsh --profile sdk` starts** — SDK JSON-RPC application answers on stdio
+6. **`initialize`** — the node's `initialize` frame is accepted (`serverInfo` returned)
+7. **session open** — `session/prompt` is delivered and a session is created (a `messageId` is
+   returned)
+8. **prompt** — a turn is opened and streamed
+9. **streaming events** — live `session.event` frames are received on the stream
+10. **completion** — the turn ends with reason `completed`
+11. **durable session persistence** — the session log (JSONL/Zstd) is written with a valid
+    `SessionHeader` (`version`, `cwd`) and durable events
+12. **graceful shutdown** — `shutdown` round-trips and the process exits 0 within the bound
+13. **restart** — a fresh launcher invocation starts cleanly against the persisted state
+14. **reopen session** — the prior session is read intact and a continuation session is opened
+15. **replay / recovery** — prior-session events replay with monotonic sequence numbers
+
+#### Result executed 2026-09-29 (real Windows 11 Pro x64, Node v24.21.0, dsh 0.2.0-rc.2)
+
+Report: `diagnostics/smoke-2026-09-29T21-31-19-546Z.json` (gitignored — it lives under the user's
+diagnostics dir; contents summarized here).
+
+| Stage | Result | Note |
+|---|---|---|
+| 01 bundled-node | **PASS** | v24.21.0 at relative `runtime\node\win-x64\...` |
+| 02 verified-runtime | **PASS** | tree hash verified (608ms) |
+| 03 pinned-dsh | **PASS** | `@deepseek-ai/dsh@0.2.0-rc.2` integrity recorded |
+| 04 native-deps | **PASS** | dsh process spawned (588ms) |
+| 05 sdk-profile | **PASS** | `deepseek-harness-sdk-runtime v0.0.1` (1284ms) |
+| 06 initialize | **PASS** | round trip 1283ms |
+| 07 session-open | **PASS** | `messageId` returned |
+| 08 prompt | **PASS** | turn opened, events streaming |
+| 09 streaming-events | **PASS** | 6 `session.event` frames observed live |
+| 10 completion | **FAIL** | turn ended with reason `error`: `Insufficient Balance (code QUOTA)` — the provider account has no credit |
+| 11 durable-session | **PASS** | session log written, header valid (56ms) |
+| 12 graceful-shutdown | **PASS** | exit 0 (68ms) |
+| 13 restart | **PASS** | second runtime initialized (1821ms) |
+| 14 reopen-session | **PASS** | prior session intact (17 events); continuation opened |
+| 15 replay-recovery | **PASS** | 17 events replayed, seq 0…16, format v4 |
+
+**Verdict: 14/15. Stage 10 fails on the provider side, not on the portable chain** — the only
+credential available in this environment returns `Insufficient Balance` from the DeepSeek API.
+Per the brief this is reported as a failure; the Windows row is **not** marked Verified, and the
+gate re-runs as soon as a funded credential is available (no code change required).
 
 Verification-level distinction (never blur these):
 
@@ -38,27 +73,42 @@ Verification-level distinction (never blur these):
 | **automated test** | runs in CI against a fixture/harness |
 | **real-platform verification** | the 1a full chain above, executed on a real Windows x64 host |
 
-Only after stage 11 passes does the Windows row in COMPATIBILITY.md advance.
+### 1a-2. Automated suite (Phase 1) — PASSING
+
+`node --test tests/*.test.mjs` — **41 tests, 41 pass, 0 fail, ~26s**, no third-party test
+dependencies (`node:test` only). The fake dsh stub (`tests/fixtures/fake-dsh.mjs`) speaks the
+real SDK wire protocol with deterministic failure modes, so lifecycle behavior is testable
+offline.
+
+| File | Tests | Coverage |
+|---|---|---|
+| `tests/runtime.test.mjs` | 9 | status on a fresh tree; missing node/dsh detection; wrong arch; wrong version; hash mismatch; corrupted manifest; `verifyFileSha256` rejection; tree-hash determinism; install-state round trip |
+| `tests/workspace.test.mjs` | 7 | init + stable identity marker; reopen; moved root detection; missing project; marker/registry conflict; root detection walk-up |
+| `tests/sessions.test.mjs` | 5 | discovery of plain + Zstd session logs; replay; incomplete-turn detection; per-workspace listing; UH session-index lineage across reload |
+| `tests/process.test.mjs` | 9 | successful launch→prompt→stream→shutdown(exit 0); init failure → `DSH_INIT_FAILED`; credential failure (no key leaked); prompt failure with clean shutdown; abnormal exit → pending requests rejected as `DSH_ABNORMAL_EXIT`; hung runtime → SIGTERM escalation then SIGKILL; no orphan process; malformed stdout tolerated; unverified runtime refused at launch |
+| `tests/security.test.mjs` | 6 | redaction of keys/tokens/private keys; recursive context redaction; logger never writes a secret; env summary reports lengths only; Windows DPAPI round trip (sealed blob outside the portable tree); config never stores a secret as plaintext |
+| `tests/migration.test.mjs` | 5 | path change detection; migration applies with backup; conflict refusal; rollback safety; restore refuses to clobber newer live state |
+| `tests/protocol/lint-schemas.mjs` | 5 | cross-file `$ref` resolution; EventKind→DurabilityClass mapping (7 files, 62 refs, 0 problems) |
 
 ### 1b. Desktop scenario matrix
 
 | Scenario | Category | Notes |
 |---|---|---|
-| First install (clean setup) | automated | fixture drive, assert staging + manifest |
-| Second launch (cached runtime) | automated | no redundant downloads |
-| Moving the folder to a new path | automated | relative-path invariant, registry integrity |
-| Renaming the folder | automated | same invariant; also Unicode/space names |
-| Unicode path / spaces in path | automated | portability invariants |
-| USB/exFAT path mode (no symlinks) | automated + real-device | no symlink emission in any code path |
-| Windows → Linux migration | integration | fixture sessions, assert header rewrites + content identity |
-| Linux → macOS migration | integration | same |
-| macOS → Windows migration | integration | same |
-| Interrupted installation recovery | automated | staged-state markers |
-| Corrupted runtime detection | automated | hash failure → refuse activation |
-| Update failure | automated | download/verify/activate failure paths |
-| Rollback | automated | previous version restorable and functional |
-| Reset | automated | data removed, models preserved |
-| Doctor | automated | all severities + recommended actions |
+| First install (clean setup) | **automated-tested** (Phase 1) | download → SHA-256 verify → unpack → npm pin install → status acceptance; executed for real on Windows x64 (smoke 01–05) |
+| Second launch (cached runtime) | **automated-tested** | smoke stage 13 (restart) + runtime status tests |
+| Moving the folder to a new path | **automated-tested** | `tests/migration.test.mjs` path-change detection + recorded-root rewrite |
+| Renaming the folder | automated (same invariant) | covered by moved-folder test; Unicode/space path dedicated case still a gap |
+| Unicode path / spaces in path | automated | fixture root has a space today; dedicated case still TODO |
+| USB/exFAT path mode (no symlinks) | automated + real-device | no symlink emission anywhere in Phase 1 code; exFAT device test still TODO |
+| Windows → Linux migration | integration | logic automated-tested; cross-OS execution NOT TESTED (no Linux host) |
+| Linux → macOS migration | integration | NOT TESTED |
+| macOS → Windows migration | integration | NOT TESTED |
+| Interrupted installation recovery | automated | download-then-verify ordering means a partial archive never unpacks; marker recovery still TODO |
+| Corrupted runtime detection | **automated-tested** | hash-mismatch + tree-hash tests refuse before launch |
+| Update failure | automated | update layer is Phase 6 — not implemented |
+| Rollback | automated | Phase 6 — not implemented |
+| Reset | automated | Phase 5+ — not implemented |
+| Doctor | **automated-tested** | live launch/initialize/shutdown probe + plaintext-secret scan + Expected/Actual/Action reporting |
 
 ## 2. Android
 
@@ -172,15 +222,26 @@ The JSON Schema files under `shared/protocol/v1/` are themselves testable immedi
   **and** that every `EventKind` maps to exactly one `DurabilityClass` (the machine-readable
   durability contract). Passing today: 7 files, 62 refs, 0 problems.
 - A Phase 2 fixture suite validates sample envelope/event/operation payloads against the schemas
-  — identical fixtures shared by all three implementation stacks (TypeScript `core/`, Kotlin
-  `android/`, Swift `ios/`) so the contract is proven identical across them.
+  — identical fixtures shared by all three implementation stacks (core/, Kotlin `android/`,
+  Swift `ios/`) so the contract is proven identical across them.
 
 ## 7. Migration robustness (specific invariants)
 
-- pre-migration backup exists and is complete before any rewrite
-- migration is idempotent: running twice = running once (session-directory rename conflicts are
-  resolved by idempotency markers, not exceptions — improving on the reference behavior in
+Phase 1 status against each invariant:
+
+- ⚠ **pre-migration backup exists and is complete before any rewrite** — implemented:
+  `applyMigration` calls `createBackup` first and verifies it; automated-tested.
+- ✅ **migration is idempotent** — running twice = running once (recorded-root rewrite is a
+  no-op when already correct; improving on the reference behavior in
   [AUDIT.md §3.3])
-- trailing Zstd frames byte-identical after header rewrites
-- unsupported session schema version → fail safe, untouched logs, actionable diagnostic
-- interrupted migration recoverable from markers
+- ⚠ **conversation content is never rewritten** — true by construction in Phase 1: the dsh
+  session logs are only *read* by Universal Harness; dsh owns session internals (per the brief).
+  Header/path rewrite across OSes (the reference project's approach) is **not implemented** and
+  is deferred until cross-platform migration is testable — the workspace registry's
+  recorded-root approach handles the Windows-side move case now.
+- ⚠ **trailing Zstd frames byte-identical after header rewrites** — not applicable yet (no
+  rewrite implemented); preserved as a requirement for the cross-OS migration phase.
+- ✅ **unsupported session schema version → fail safe** — `core/sessions` reads v4 (and plain
+  JSONL) and does not guess at unknown versions.
+- ⚠ **interrupted migration recoverable from markers** — partially: backups + history records
+  exist; the marker-based resume path is a Phase 5/6 item.
