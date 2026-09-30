@@ -6,8 +6,10 @@ node_modules/
 .pnpm-store/
 
 # Portable runtime & downloaded bundles (never commit binaries)
-runtime/
-runtimes/
+# Anchored to the repo root so these patterns do not shadow the Phase 1
+# source modules under core/runtime/, core/secrets/ and core/diagnostics/.
+/runtime/
+/runtimes/
 toolchains/
 models/
 *.tar.xz
@@ -22,7 +24,7 @@ models/
 # Portable mutable state (sample fixtures live under tests/fixtures/)
 data/
 cache/
-diagnostics/
+/diagnostics/
 *.part
 state/
 logs/
@@ -38,7 +40,7 @@ manifest/staged/
 *.key
 *.pem
 *.p12
-secrets/
+/secrets/
 .env
 .env.*
 
