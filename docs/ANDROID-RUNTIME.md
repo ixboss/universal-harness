@@ -15,10 +15,10 @@ imported Mobile-Harness sources (`com.jarves.mh.*`, pinned snapshot — see
 |---|---|---|
 | Runtime pins | `UhPins.kt` | Pinned Ubuntu 20.04.5 arm64 base, Node v24.21.0 linux-arm64, dsh 0.2.0-rc.2, each with official checksums (cdimage `SHA256SUMS`, nodejs.org `SHASUMS256.txt`, npm sha512 — mirrors `manifests/runtime.manifest.json`) |
 | Verified acquisition | `UhIo.kt` | Streaming SHA-256; download-to-`.part` + hash-verify + atomic rename (a partial download can never masquerade as complete; a good prior copy is reused) |
-| Safe extraction | `SafeTarExtractor.kt` | tar.gz extraction with traversal/absolute/NUL rejection, contained-relative-symlink policy, hard-link rejection, executable-bit preservation |
+| Safe extraction | `SafeTarExtractor.kt` | tar.gz extraction with traversal/absolute/NUL rejection, contained-symlink policy, archive-root-relative hard links (materialized in rounds, degrading to a copy where the OS denies `linkat`), executable-bit preservation |
 | Install state | `InstallStateStore.kt` | Per-stage durable records (temp+rename). A stage counts as done only while its recorded pin still matches; corrupt state reads as "nothing done" |
-| Installer | `UhRuntimeInstaller.kt` | Stages: `rootfs` → `node` → `bootstrap` (guest DNS + `apt-get install ca-certificates`) → `dsh` (guest `npm install -g --exact @deepseek-ai/dsh@0.2.0-rc.2`) → `verify` (`uname -m` == `aarch64`, `node -v` == `v24.21.0`, `dsh --version` contains `0.2.0-rc.2`, all executed inside PRoot) |
-| PRoot command | `UhPRootCommand.kt` | Builds the carrier-executed `libproot.so` invocation (same audited argv/env shape as Mobile-Harness's `RuntimeInstaller.process()`; `--link2symlink` OFF for dsh — its atomic temp-file renames break under PRoot hard-link emulation) |
+| Installer | `UhRuntimeInstaller.kt` | Stages: `rootfs` → `node` → `bootstrap` (guest DNS, `dpkg --configure -a`, `apt-get install ca-certificates`) → `dsh` (guest `npm install -g --prefix /usr/local --exact @deepseek-ai/dsh@0.2.0-rc.2`) → `verify` (`uname -m` == `aarch64`, `node -v` == `v24.21.0`, `dsh --version` contains `0.2.0-rc.2`, all executed inside PRoot) |
+| PRoot command | `UhPRootCommand.kt` | Builds the carrier-executed `libproot.so` invocation (same audited argv/env shape as Mobile-Harness's `RuntimeInstaller.process()`). `--link2symlink` is ON for the apt/dpkg bootstrap (Android denies `linkat(2)` to apps, which dpkg needs for `status-old`) and OFF for dsh — its atomic temp-file renames break under PRoot hard-link emulation |
 | Native spawn | `uh_spawn.c` + `UhNativeProcess.kt` | New JNI bridge (`libuhspawn.so`): fork/execve with **three separate stdio pipes**, child process group (`setpgid` in child and parent), group-first signal, `PR_SET_PDEATHSIG` so the guest cannot outlive the app, `PR_SET_DUMPABLE` so PRoot may ptrace. Separate stderr is why this exists — pocketspawn merges stdout+stderr, which would corrupt the NDJSON seam |
 | dsh SDK client | `DshSdkClient.kt`, `DshSdkProtocol.kt` | NDJSON framer (bounded per-line buffer, non-JSON lines tolerated like the desktop adapter), JSON-RPC `initialize`/`session/prompt`/`shutdown`, per-request correlation and timeouts, bounded teardown `shutdown(15s) → SIGTERM(10s) → SIGKILL(5s)`, cancellation without the graceful step, error propagation as `DshSdkException` |
 | Restart reconciliation | `RuntimeReconciler.kt` | A session recorded `running` is rewritten to `reconciled-after-restart` at app start (ADR-005 supervisor rule: a dead process is never reported running; Android also kills the guest via `PR_SET_PDEATHSIG`) |
@@ -79,20 +79,23 @@ recording actual output. The JSON-RPC initialize round trip runs through `UhRunt
 | Gate | Status | Evidence |
 |---|---|---|
 | A — repository integrity | **Pass** | JS suite 121/121, lint-schemas 0 problems, validate-repo 0 problems; no secrets; dsh untouched |
-| B — Android build | **Pass (host)** | Gradle debug + unsigned release + androidTest APK build; 102/102 JVM unit tests (incl. the full imported Mobile-Harness suite); arm64-v8a-only native packaging verified by APK inspection |
-| C — runtime installation | **Implemented, not executed** | Stage machine + verifier implemented and unit-tested; no device has run the downloads/extraction |
-| D — actual ARM64 execution | **BLOCKED — no ARM64 Android device available** | `adb devices` shows none; no AVD exists and the emulator is x86_64 while the APK is arm64-only. This is the R-01 gate; a build passing is NOT execution evidence |
-| E — provider prompt test | **Not attempted** | Requires Gate D first and a funded dsh credential (separately blocked by the provider account, as on desktop) |
+| B — Android build | **Pass (host)** | Gradle debug + unsigned release + androidTest APK build; 105/105 JVM unit tests per flavor (incl. the full imported Mobile-Harness suite); arm64-v8a-only native packaging verified by APK inspection |
+| C — runtime installation | **Pass (device)** | moto g 5G plus (nairo, Android 11 / API 30, arm64-v8a): staged install completed on-device — pinned Ubuntu 20.04.5 arm64 rootfs extracted, Node v24.21.0 linux-arm64 activated, `apt-get` bootstrap (dpkg under `--link2symlink`), pinned dsh installed with the guest npm into `/usr/local`; install state durable and resumable across runs |
+| D — actual ARM64 execution | **Pass (device)** | Gate D instrumented suite 8/8 on the real device: `uname -m` == `aarch64`, `node -v` == `v24.21.0`, `node -p process.arch` == `arm64`, `dsh --version` == `0.2.0-rc.2`, SDK `initialize` returns `serverInfo`, clean `shutdown` with exit status 0; cold restart after `am force-stop` re-passes 8/8 with reconciliation and no orphaned proot/node/dsh processes |
+| E — provider prompt test | **Externally blocked (provider-side)** | The SDK seam is proven through `initialize` + clean `shutdown`. A real `session/prompt` needs a funded provider credential: the host credential is accepted (`HTTP 200`) but the account reports `is_available: false`, balance `0.00 USD` — unfunded. This is a provider-account limitation (R-21), not an Android runtime defect, and is tracked separately from R-01 |
 
-**R-01 remains UNRESOLVED.** What Phase 3A changed: every known source-level blocker has an
-implementation and an automated test on the host side (pinned acquisition, safe extraction,
-separate-stdio process management, bounded teardown, restart reconciliation), so the remaining
-risk is concentrated in genuinely device-only behavior (PRoot syscall behavior on the specific
-kernel, glibc/Node execution under ptrace, signal delivery, storage performance).
+**R-01 is RESOLVED.** The real ARM64 device completed the TESTING.md §2a core chain —
+Android → PRoot → Ubuntu arm64 → Node v24.21.0 → `dsh --profile sdk` → JSON-RPC `initialize`
+→ clean `shutdown` — with recorded device evidence for every stage. Six device-only defects
+were found and fixed along the way (see [PROVENANCE.md](../android/PROVENANCE.md) and the
+Phase 3A real-device checkpoint commit); the provider prompt remains separately blocked by
+account funding, not by the runtime.
 
 ## Remaining risks and limitations
 
-- PRoot ptrace overhead and kernel-specific syscall gaps are unmeasured on-device.
+- PRoot ptrace overhead and kernel-specific syscall gaps are now measured on one device/kernel
+  (Android 11, kernel 4.19-era Qualcomm nairo) but remain unmeasured on other Android versions
+  and SoCs; the runtime gate must be re-run when targeting a new device class.
 - The guest bootstrap needs device network access for apt/npm (one-time); offline install
   would require a prebuilt runtime bundle (a later concern).
 - Mobile-Harness's own UI/agents remain imported but unused; trimming them is deliberately

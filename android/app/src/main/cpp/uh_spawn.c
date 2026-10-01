@@ -33,7 +33,7 @@ static jint throw_io_exception(JNIEnv *env, const char *message) {
  * an orphaned PRoot tree running unmanaged.
  */
 JNIEXPORT jintArray JNICALL
-Java_com_universalharness_node_UhNativeProcess_00024UhNativeSpawn_spawn(
+Java_com_universalharness_node_UhNativeSpawn_spawn(
         JNIEnv *env, jobject thiz, jobjectArray argv, jobjectArray environment,
         jstring cwd) {
     (void) thiz;
@@ -142,7 +142,7 @@ cleanup:
 }
 
 JNIEXPORT jint JNICALL
-Java_com_universalharness_node_UhNativeProcess_00024UhNativeSpawn_waitFor(
+Java_com_universalharness_node_UhNativeSpawn_waitFor(
         JNIEnv *env, jobject thiz, jint pid, jboolean noHang) {
     (void) env; (void) thiz;
     int status = 0;
@@ -158,7 +158,7 @@ Java_com_universalharness_node_UhNativeProcess_00024UhNativeSpawn_waitFor(
 }
 
 JNIEXPORT jint JNICALL
-Java_com_universalharness_node_UhNativeProcess_00024UhNativeSpawn_kill(
+Java_com_universalharness_node_UhNativeSpawn_kill(
         JNIEnv *env, jobject thiz, jint pid, jint signal) {
     (void) env; (void) thiz;
     int result = kill((pid_t) -pid, signal); /* signal the whole process group first */

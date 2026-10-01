@@ -20,7 +20,7 @@ Nothing here says "Verified" until a real test produces evidence recorded in [TE
 | Windows | x64 | Local (bundled Node) | **Smoke-executed — 14/15 stages pass** (stage 10 blocked by provider account quota, TESTING.md §1a) | **Real-chain verified** (hash-verified Node v24.21.0 + pinned dsh booted) | N/A in Phase 1 (Phase 2) | Smoke executed on real Windows 11 x64; **not fully verified** |
 | Linux | x64 | Local (bundled Node) | Automated-tested (source-level cross-check only) | Source-level (manifest hash pinned, code non-Windows-only) | N/A | **NOT TESTED** — no Linux host available (WSL not installed) |
 | macOS | arm64 (Apple Silicon) | Local (bundled Node) | Not tested | Source-level (manifest hash pinned) | N/A | **NOT TESTED — acceptable per brief §20** (no macOS host) |
-| Android | arm64 | Local via PRoot | **Unresolved (R-01)** — gated by real-device full chain (TESTING.md §2a); Phase 3A foundation implemented and host-built, device gate blocked on device availability ([ANDROID-RUNTIME.md](ANDROID-RUNTIME.md)) | Phase 3A: runtime foundation implemented (install/verify/bridge), not device-executed | Not implemented (Phase 3B+, out of 3A scope) | Import baseline + Phase 3A foundation; no device execution yet |
+| Android | arm64 | Local via PRoot | **Real-device verified (R-01 RESOLVED)** — TESTING.md §2a core chain executed on a physical moto g 5G plus (Android 11 / API 30, arm64-v8a): PRoot → Ubuntu 20.04.5 arm64 → Node v24.21.0 (`process.arch` == `arm64`) → `dsh --version` == `0.2.0-rc.2` → `dsh --profile sdk` → JSON-RPC `initialize` (`serverInfo`) → clean `shutdown` (exit 0); cold restart with reconciliation; no orphaned guest processes. Provider-prompt stages remain blocked by account funding (R-21), not by the runtime ([ANDROID-RUNTIME.md](ANDROID-RUNTIME.md)) | Phase 3A: runtime foundation implemented and **device-executed** (2026-10-01) | Not implemented (Phase 3B+, out of 3A scope) | Real ARM64 device; full chain through clean shutdown |
 | iPhone/iPadOS | arm64 | **Client only** | N/A (by design, [ADR-002](adr/ADR-002-ios-client-only.md)) | N/A | N/A | Not tested (no macOS host) |
 
 > **Why Windows is not "Verified" despite executing the chain:** the brief §18 requires the full
@@ -43,6 +43,15 @@ Nothing here says "Verified" until a real test produces evidence recorded in [TE
 - **Android arm64** — the full chain of TESTING.md §2a on a real ARM64 device, including reconnect
   and session/task state recovery. A partial pass (PRoot + Node alone) is not success; on failure
   the exact blocker is documented and the row stays **Unresolved**.
+  **Executed 2026-10-01 on a physical moto g 5G plus (Android 11 / API 30, arm64-v8a): the core
+  chain passes through clean shutdown — PRoot → Ubuntu 20.04.5 arm64 → Node v24.21.0 →
+  `dsh --profile sdk` → JSON-RPC `initialize` (`serverInfo`) → `shutdown` (exit 0) → cold restart
+  with reconciliation and zero orphaned guest processes. R-01 is RESOLVED on this basis. The
+  provider-dependent stages (prompt → streaming → completion → durable session) are **not
+  executed**: the only available credential is accepted by the provider but the account reports
+  `is_available: false` with a `0.00 USD` balance (R-21) — an account-funding limitation external
+  to this repository, identical to the Windows stage-10 block. Those stages remain to be run with
+  a funded credential; they do not reopen R-01, whose gate is the runtime chain.**
 - **Linux x64 / macOS arm64** — the equivalent chain per platform. Neither can be executed in this
   environment: WSL is not installed (installing it needs admin + reboot and is not a Phase 1
   action), Git Bash is a MINGW userspace rather than a Linux kernel, and no macOS hardware exists.
@@ -83,7 +92,8 @@ Nothing here says "Verified" until a real test produces evidence recorded in [TE
 | 2026-09-29 | No orphaned dsh process after shutdown/kill | `tests/process.test.mjs` "no orphan process" + `pidAlive` checks in the smoke chain | Automated-tested |
 | 2026-09-29 | Runtime integrity: hash mismatch is refused before launch | `tests/runtime.test.mjs` (hash-mismatch, corrupted-manifest, wrong-arch, tree-hash determinism) + `core/runtime/requireRuntime` | Automated-tested |
 | 2026-09-29 | Credentials never plaintext in the portable tree | `tests/security.test.mjs` (DPAPI round trip, config-never-plaintext, logger redaction) | Automated-tested |
-| — | dsh runs inside Android PRoot full chain (TESTING.md §2a) | none — not executed | **Unresolved (R-01)** |
+| 2026-10-01 | Android arm64 runtime full chain (TESTING §2a core): app → PRoot → Ubuntu arm64 → Node v24.21.0 → `dsh --profile sdk` → `initialize` → clean `shutdown` | Physical moto g 5G plus (Android 11 / API 30, arm64-v8a; `ro.kernel.qemu` empty), Gate D instrumented suite 8/8, re-run 8/8 after `am force-stop` cold restart; device evidence at `files/uh-state/gate-d-evidence.txt`: `uname -m`=`aarch64`, `node -v`=`v24.21.0`, `process.arch`=`arm64`, `dsh --version`=`0.2.0-rc.2`, `initialize` result keys=`[serverInfo]`, `shutdownStatus=0`; `ps -A` shows no proot/node/dsh after shutdown | **Executed (real device) — R-01 RESOLVED for the runtime chain** |
+| 2026-10-01 | Android arm64 provider prompt / streaming / completion | Provider balance API returns `is_available: false`, `total_balance` `0.00 USD` for the only available credential (R-21) | **Not executed — externally blocked (provider account funding), not a runtime defect** |
 | — | Protocol v1 round-trips on a live node | Phase 2 checkpoint: server + tests (memory/stdio transports) | **Automated-tested** (tests/protocol-core, tests/server; no network transport yet) |
 | — | Linux x64 full chain | not executed — no Linux host (WSL not installed) | **NOT TESTED** |
 | — | macOS arm64 full chain | not executed — no macOS host (acceptable per brief §20) | **NOT TESTED** |

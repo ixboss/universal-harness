@@ -152,10 +152,24 @@ acquisition (Ubuntu 20.04.5 arm64 base + Node v24.21.0 linux-arm64 + dsh 0.2.0-r
 checksum-verified on download), hardened rootfs extraction, a new separate-stdio PRoot spawn
 bridge, the dsh SDK client with bounded teardown and restart reconciliation, the Android
 Keystore secret foundation, and 33 JVM unit tests on the host. Gradle debug/release builds pass
-on arm64-v8a. **R-01 stays unresolved**: Gate D (real ARM64 device execution of the §2a chain)
-is blocked on device availability — a build is not execution evidence. **Phase boundaries remain: iOS stays Phase 4; Phase 5
+on arm64-v8a. **Phase boundaries remain: iOS stays Phase 4; Phase 5
 synchronization and Phase 6 hardening stay excluded except as direct Android blockers; no
 upstream dsh modification (ADR-001).**
+
+**Phase 3A real-device verification (2026-10-01): R-01 RESOLVED.** The real ARM64 chain was
+executed on a physical moto g 5G plus (Android 11 / API 30, arm64-v8a, `ro.kernel.qemu` empty):
+app → PRoot → Ubuntu 20.04.5 arm64 → Node v24.21.0 (`process.arch` == `arm64`) →
+`dsh --version` == `0.2.0-rc.2` → `dsh --profile sdk` → JSON-RPC `initialize` (result `serverInfo`)
+→ clean `shutdown` (exit 0) → cold restart with reconciliation and zero orphaned proot/node/dsh
+processes. The Gate D instrumented suite passes 8/8, both on a fresh install and after
+`am force-stop`. Six device-only defects were found and fixed to reach this (Android `linkat`
+denial during extraction and inside dpkg; a JNI symbol/class mismatch; missing npm/npx/dsh PATH
+links; interrupted-bootstrap recovery; the absent provider default in `initialize`). The
+provider-dependent stages — prompt, streaming, completion, durable session events — remain
+**not executed**: the only available credential is accepted by the provider but the account
+reports `is_available: false` with a `0.00 USD` balance (R-21), an account-funding limitation
+external to this repository and identical to the Windows stage-10 block. Those stages are to be
+run later with a funded credential; they do not reopen R-01, whose gate is the runtime chain.
 
 **Definition of done includes the R-01 gate:** the real ARM64 full chain of
 [TESTING.md §2a](TESTING.md#2a-android-execution-full-chain-gate--mandatory-currently-unresolved) —

@@ -71,6 +71,30 @@ none alters upstream behavior on the upstream's own paths:
    invariant separators (`invariantSeparatorsPath`); backslash keys broke the checkpoint
    contract on Windows hosts (caught by upstream's own `MemoryBoundsTest`).
 
+## Device-driven fixes found by the real ARM64 Gate D run (2026-10-01, moto g 5G plus)
+
+These are all in new Universal Harness code (`com.universalharness.node`), not upstream changes;
+each was only discoverable by executing on a real device:
+
+1. **Android denies `linkat(2)` to apps.** `SafeTarExtractor` now resolves tar hard links
+   against the archive root (they are root-relative, not entry-parent-relative as symlinks are),
+   materializes them in rounds to handle chains, and degrades to a byte copy when the OS refuses
+   the hard link. The same denial breaks `dpkg` (it hard-links `status` → `status-old`), so
+   `--link2symlink` is enabled for the apt/dpkg bootstrap only — it stays off for dsh, whose
+   atomic temp-file renames break under the emulation.
+2. **JNI symbol mismatch** — `uh_spawn.c` exported `UhNativeProcess$UhNativeSpawn_*` (nested
+   class) while the Kotlin declaration is a top-level `object UhNativeSpawn`. The C names were
+   corrected to match.
+3. **Guest PATH links** — the Node stage linked only `/usr/local/bin/node`; npm/npx/dsh are now
+   linked too (npm derives its global prefix from node's location, so `--prefix /usr/local` is
+   passed explicitly for dsh), and both stages self-heal an install completed by an older build
+   instead of trusting the recorded done-pin alone.
+4. **Bootstrap recovery** — an interrupted apt bootstrap leaves dpkg half-configured and apt
+   refuses to proceed; `dpkg --configure -a` runs before apt (an idempotent no-op when clean).
+5. **SDK `initialize` provider default** — the dsh SDK server only auto-mounts its DeepSeek
+   adapter for `provider: "deepseek-official"`; the client now defaults to that, matching the
+   desktop adapter (`core/adapter/mod.mjs`).
+
 ## Update procedure for future upstream refreshes
 
 1. Choose and record the new upstream commit SHA; re-verify it is credential-free (full-history

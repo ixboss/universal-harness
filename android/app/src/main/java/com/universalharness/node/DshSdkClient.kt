@@ -125,8 +125,21 @@ class DshSdkClient(
         startExitWatcher(handle)
     }
 
-    /** JSON-RPC initialize; a protocol error response is propagated as [DshSdkException]. */
-    suspend fun initialize(cwd: String = "/workspace", provider: String? = null, model: String? = null): JSONObject =
+    /**
+     * JSON-RPC initialize; a protocol error response is propagated as [DshSdkException].
+     *
+     * The provider default mirrors the desktop adapter (core/adapter/mod.mjs sends
+     * 'deepseek-official' when no override is given). It is also the only provider the dsh SDK
+     * server mounts automatically — any other (or absent) value makes the server reject the
+     * handshake with `no adapter registered for provider "..."`. No credential is needed for
+     * the handshake itself; resolveCallConfig only resolves model metadata. A real prompt
+     * still requires a valid key, which is the separate provider-credential gate.
+     */
+    suspend fun initialize(
+        cwd: String = "/workspace",
+        provider: String = "deepseek-official",
+        model: String = "deepseek-official",
+    ): JSONObject =
         request("initialize", DshSdkProtocol.initializeParams(cwd, provider, model), INITIALIZE_TIMEOUT_MS)
 
     suspend fun prompt(sessionId: String, text: String, timeoutMs: Long = 0): JSONObject =

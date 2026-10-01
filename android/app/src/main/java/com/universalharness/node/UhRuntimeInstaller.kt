@@ -57,7 +57,10 @@ class UhRuntimeInstaller(
     }
 
     suspend fun installNode(onProgress: suspend (Progress) -> Unit) {
-        if (state.isStageDone(STAGE_NODE, UhPins.NODE_SHA256)) return
+        // The done-pin alone is not enough: an install completed by an older build may lack the
+        // npm/npx links (see linkGuestBins). Re-running is cheap — the download is cached and
+        // verified — and it repairs such a runtime instead of leaving npm unreachable.
+        if (state.isStageDone(STAGE_NODE, UhPins.NODE_SHA256) && guestBinsLinked()) return
         require(state.isStageDone(STAGE_ROOTFS, UhPins.UBUNTU_BASE_SHA256)) { "rootfs stage is not complete" }
         onProgress(Progress(STAGE_NODE, "downloading Node.js ${UhPins.NODE_VERSION} linux-arm64 (SHA-256 pinned)", 0.1f))
         val archive = VerifiedFetcher.fetch(
@@ -81,8 +84,7 @@ class UhRuntimeInstaller(
         }
         staging.deleteRecursively()
         val localBin = File(paths.rootfsDir, "usr/local/bin").apply { mkdirs() }
-        File(localBin, "node").apply { delete(); setExecutable(true) }
-        createGuestSymlink(File(localBin, "node"), "../lib/nodejs/${UhPins.NODE_ARCHIVE_ROOT}/bin/node")
+        linkGuestBins(localBin)
         state.markDone(STAGE_NODE, UhPins.NODE_SHA256, clock())
         onProgress(Progress(STAGE_NODE, "Node installed and pinned", 1f))
     }
@@ -92,27 +94,48 @@ class UhRuntimeInstaller(
         if (state.isStageDone(STAGE_BOOTSTRAP, null)) return
         onProgress(Progress(STAGE_BOOTSTRAP, "installing guest ca-certificates (apt)", 0.4f))
         writeResolvConf()
+        // An interrupted bootstrap (app killed, OOM) leaves dpkg with unpacked-but-unconfigured
+        // packages, and apt then refuses to proceed until the database is reconciled. This is
+        // an idempotent no-op on a clean rootfs, so it runs unconditionally before apt.
+        runGuest(
+            listOf("/usr/bin/dpkg", "--configure", "-a"),
+            timeoutMs = 300_000,
+            failureHint = "dpkg --configure -a failed; the guest package database is inconsistent",
+            emulateHardLinks = true,
+        )
+        // dpkg backs up its status database with a hard link (status -> status-old), and
+        // Android denies linkat(2) to apps — confirmed on the real device as
+        // "error creating new backup file '/var/lib/dpkg/status-old': Permission denied".
+        // PRoot's --link2symlink emulation is what makes apt usable here, so it is on for
+        // the bootstrap only. The dsh SDK path keeps it off: dsh saves through atomic
+        // temp-file renames and the emulation would turn those into dangling .l2s links.
         runGuest(
             listOf("/usr/bin/apt-get", "update"),
             timeoutMs = 180_000,
             failureHint = "apt-get update failed; the device needs working network access for the one-time guest bootstrap",
+            emulateHardLinks = true,
         )
         runGuest(
             listOf("/usr/bin/apt-get", "install", "-y", "--no-install-recommends", "ca-certificates"),
             timeoutMs = 300_000,
             failureHint = "apt-get install ca-certificates failed",
+            emulateHardLinks = true,
         )
         state.markDone(STAGE_BOOTSTRAP, null, clock())
         onProgress(Progress(STAGE_BOOTSTRAP, "guest bootstrap complete", 1f))
     }
 
     suspend fun installDsh(onProgress: suspend (Progress) -> Unit) {
-        if (state.isStageDone(STAGE_DSH, UhPins.DSH_TARBALL_SHA512)) return
+        // As with the Node stage, the done-pin alone does not prove the binary is on the guest
+        // PATH: npm's default global prefix is derived from node's location, which puts dsh
+        // under the distribution prefix instead of /usr/local/bin. Re-running repairs it.
+        if (state.isStageDone(STAGE_DSH, UhPins.DSH_TARBALL_SHA512) && guestDshPresent()) return
         require(state.isStageDone(STAGE_NODE, UhPins.NODE_SHA256)) { "node stage is not complete" }
         onProgress(Progress(STAGE_DSH, "installing ${UhPins.DSH_PACKAGE}@${UhPins.DSH_VERSION} with the guest npm", 0.3f))
         runGuest(
             listOf(
                 "/usr/local/bin/npm", "install", "-g",
+                "--prefix", "/usr/local",
                 "--omit=dev", "--no-audit", "--no-fund", "--exact",
                 "${UhPins.DSH_PACKAGE}@${UhPins.DSH_VERSION}",
             ),
@@ -153,8 +176,13 @@ class UhRuntimeInstaller(
     }
 
     /** Runs a guest command through PRoot to completion, returning trimmed stdout. */
-    fun runGuest(guestCommand: List<String>, timeoutMs: Long, failureHint: String): String {
-        val cmd = prootCommandFactory.build(guestCommand, emulateHardLinks = false)
+    fun runGuest(
+        guestCommand: List<String>,
+        timeoutMs: Long,
+        failureHint: String,
+        emulateHardLinks: Boolean = false,
+    ): String {
+        val cmd = prootCommandFactory.build(guestCommand, emulateHardLinks = emulateHardLinks)
         val process = UhNativeProcess.start(cmd.argv, cmd.environment, cmd.cwd)
         val stdout = process.stdoutStream().bufferedReader().readText()
         val stderrTail = process.stderrStream().bufferedReader().readLines().takeLast(20)
@@ -191,6 +219,25 @@ class UhRuntimeInstaller(
         // one-time npm/apt bootstrap, matching Mobile-Harness's bootstrap script.
         File(etc, "resolv.conf").writeText("nameserver 1.1.1.1\nnameserver 8.8.8.8\n")
     }
+
+    /**
+     * The Node distribution ships node/npm/npx in its own bin/ — npm and npx are symlinks into
+     * lib/node_modules carrying a `#!/usr/bin/env node` shebang. Expose all three on the guest
+     * PATH so `npm` is reachable; the shebang resolves through /usr/local/bin/node.
+     */
+    private fun linkGuestBins(localBin: File) {
+        listOf("node", "npm", "npx").forEach { name ->
+            val link = File(localBin, name)
+            link.delete()
+            createGuestSymlink(link, "../lib/nodejs/${UhPins.NODE_ARCHIVE_ROOT}/bin/$name")
+        }
+    }
+
+    private fun guestBinsLinked(): Boolean =
+        listOf("node", "npm", "npx").all { File(paths.rootfsDir, "usr/local/bin/$it").exists() }
+
+    private fun guestDshPresent(): Boolean =
+        File(paths.rootfsDir, paths.guestDshPath.removePrefix("/")).exists()
 
     private fun createGuestSymlink(link: File, target: String) {
         try {

@@ -97,16 +97,72 @@ class SafeTarExtractorTest {
     }
 
     @Test
-    fun `hard links are rejected outright`() {
-        val tarGz = File(tempDir("src6"), "a.tar.gz")
+    fun `absolute symlink targets inside the guest root are allowed (Debian alternatives)`() {
+        // Found on the real device: ubuntu-base ships etc/alternatives/* -> /usr/bin/*.
+        org.junit.Assume.assumeFalse(System.getProperty("os.name").contains("win", ignoreCase = true))
+        val tarGz = File(tempDir("src7"), "a.tar.gz")
         writeTarGz(tarGz) { tar ->
-            val link = TarArchiveEntry("./hard", TarConstants.LF_LINK)
-            link.linkName = "./etc/os-release"
+            val link = TarArchiveEntry("./etc/alternatives/awk", TarConstants.LF_SYMLINK)
+            link.linkName = "/usr/bin/mawk"
+            tar.putArchiveEntry(link)
+            tar.closeArchiveEntry()
+        }
+        val dest = tempDir("dest7")
+        SafeTarExtractor.extractGzipTar(tarGz, dest)
+        assertTrue(File(dest, "etc/alternatives/awk").exists(), "absolute in-guest symlink must be created")
+    }
+
+    @Test
+    fun `a traversing absolute symlink is rejected`() {
+        val tarGz = File(tempDir("src8"), "a.tar.gz")
+        writeTarGz(tarGz) { tar ->
+            val link = TarArchiveEntry("./etc/evil", TarConstants.LF_SYMLINK)
+            link.linkName = "/../evil"
             tar.putArchiveEntry(link)
             tar.closeArchiveEntry()
         }
         assertFailsWith<SafeTarExtractor.UnsafeEntryException> {
-            SafeTarExtractor.extractGzipTar(tarGz, tempDir("dest6"))
+            SafeTarExtractor.extractGzipTar(tarGz, tempDir("dest8"))
+        }
+    }
+
+    @Test
+    fun `a contained hard link to an extracted file is created (Debian bzcat pattern)`() {
+        val tarGz = File(tempDir("src6"), "a.tar.gz")
+        writeTarGz(tarGz) { tar ->
+            entry(tar, "./usr/bin/bzip2", "payload", mode = 493)
+            val link = TarArchiveEntry("./usr/bin/bzcat", TarConstants.LF_LINK)
+            link.linkName = "usr/bin/bzip2"
+            tar.putArchiveEntry(link)
+            tar.closeArchiveEntry()
+        }
+        val dest = tempDir("dest6")
+        SafeTarExtractor.extractGzipTar(tarGz, dest)
+        val bzcat = File(dest, "usr/bin/bzcat")
+        val bzip2 = File(dest, "usr/bin/bzip2")
+        // The contract the guest depends on: the linked name exposes the target's bytes.
+        // Android denies linkat(2) to apps, so the extractor degrades to a copy there and the
+        // two paths are NOT the same inode — hence content is asserted unconditionally and
+        // inode sharing only where the OS actually allows hard links.
+        assertEquals("payload", bzcat.readText())
+        assertEquals(bzip2.readBytes().toList(), bzcat.readBytes().toList())
+        if (!System.getProperty("os.name").contains("win", ignoreCase = true)) {
+            assertTrue(java.nio.file.Files.isSameFile(bzcat.toPath(), bzip2.toPath()),
+                "bzcat must share bzip2's inode where the OS allows hard links")
+        }
+    }
+
+    @Test
+    fun `a hard link to a not-yet-extracted target is rejected`() {
+        val tarGz = File(tempDir("src6b"), "a.tar.gz")
+        writeTarGz(tarGz) { tar ->
+            val link = TarArchiveEntry("./usr/bin/bzcat", TarConstants.LF_LINK)
+            link.linkName = "usr/bin/later-file"
+            tar.putArchiveEntry(link)
+            tar.closeArchiveEntry()
+        }
+        assertFailsWith<SafeTarExtractor.UnsafeEntryException> {
+            SafeTarExtractor.extractGzipTar(tarGz, tempDir("dest6b"))
         }
     }
 }
