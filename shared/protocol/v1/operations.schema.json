@@ -14,6 +14,69 @@
         "capabilities": { "description": "Client-side capability declaration." }
       }
     },
+    "NodeHello": {
+      "type": "object",
+      "description": "Greeting sent by the node on every new connection, before the client authenticates. Carries the nonce the client must sign, and the identity the client verifies against its pairing record.",
+      "required": ["nodeId", "protocolVersionRange", "challengeB64"],
+      "additionalProperties": false,
+      "properties": {
+        "nodeId": { "$ref": "identifiers.schema.json#/$defs/NodeId" },
+        "protocolVersionRange": {
+          "type": "array",
+          "items": { "type": "integer" },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "[minSupported, maxSupported] inclusive."
+        },
+        "challengeB64": {
+          "type": "string",
+          "description": "Nonce the client signs with its paired device private key for auth.connect. Single-use per connection."
+        },
+        "operations": {
+          "type": "array",
+          "items": { "$ref": "capabilities.schema.json#/$defs/OperationKind" },
+          "description": "The operation set this node actually serves. Clients use it for capability discovery; operations absent from it are CAPABILITY_UNSUPPORTED at dispatch time."
+        },
+        "pairingOpen": { "type": "boolean", "description": "Node currently accepts pairing requests." },
+        "dshVersion": { "type": ["string", "null"] },
+        "uhVersion": { "type": ["string", "null"] }
+      }
+    },
+    "AuthConnect": {
+      "type": "object",
+      "description": "Client authentication. Proves possession of the paired device private key by signing the node.hello challenge. A pairing token alone is never accepted here; the token is only consumed by device.pair.",
+      "required": ["deviceId", "sigB64"],
+      "additionalProperties": false,
+      "properties": {
+        "deviceId": { "$ref": "identifiers.schema.json#/$defs/DeviceId" },
+        "sigB64": {
+          "type": "string",
+          "description": "Signature over the node.hello challengeB64 with the device long-lived private key."
+        },
+        "requestedScopes": {
+          "type": "array",
+          "items": { "$ref": "identifiers.schema.json#/$defs/ScopeToken" },
+          "description": "Subset request; the node may grant less than asked and records exactly what it granted."
+        },
+        "protocolVersionRange": {
+          "type": "array",
+          "items": { "type": "integer" },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      }
+    },
+    "AuthConnectResponse": {
+      "type": "object",
+      "description": "Successful authentication result. Grants are authoritative: the client must use the granted scope set, not what it requested.",
+      "required": ["deviceId", "grantedScopes"],
+      "additionalProperties": false,
+      "properties": {
+        "deviceId": { "$ref": "identifiers.schema.json#/$defs/DeviceId" },
+        "grantedScopes": { "type": "array", "items": { "$ref": "identifiers.schema.json#/$defs/ScopeToken" } },
+        "protocolVersion": { "type": "integer" }
+      }
+    },
     "TaskStartRequest": {
       "type": "object",
       "required": ["projectId"],
@@ -37,6 +100,56 @@
         "toolCallId": { "type": "string" }
       }
     },
+    "TaskCancelRequest": {
+      "type": "object",
+      "description": "Requests node-side cancellation: SIGTERM (bounded) then force kill. The node records the outcome; the client learns it from the task.cancelled event, not from this response.",
+      "required": ["taskId"],
+      "additionalProperties": false,
+      "properties": {
+        "taskId": { "$ref": "identifiers.schema.json#/$defs/TaskId" },
+        "reason": { "type": ["string", "null"] }
+      }
+    },
+    "TaskListRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
+        "state": { "type": "string", "description": "Filter to tasks in this state." }
+      }
+    },
+    "TaskListResponse": {
+      "type": "object",
+      "required": ["tasks"],
+      "additionalProperties": false,
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["taskId", "state"],
+            "additionalProperties": false,
+            "properties": {
+              "taskId": { "$ref": "identifiers.schema.json#/$defs/TaskId" },
+              "state": { "type": "string" },
+              "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
+              "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId" },
+              "createdAt": { "type": "string", "format": "date-time" },
+              "updatedAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      }
+    },
+    "TaskHistoryRequest": {
+      "type": "object",
+      "description": "Returns the node-owned durable event timeline for one task.",
+      "required": ["taskId"],
+      "additionalProperties": false,
+      "properties": {
+        "taskId": { "$ref": "identifiers.schema.json#/$defs/TaskId" }
+      }
+    },
     "FileWriteRequest": {
       "type": "object",
       "required": ["projectId", "path", "content"],
@@ -50,6 +163,16 @@
         "overwrite": { "type": "boolean", "default": false, "description": "Explicit overwrite; audited; still refuses to clobber a newer file silently." }
       }
     },
+    "FileReadRequest": {
+      "type": "object",
+      "description": "Reads one workspace file. Every read returns content, version, hash, modifiedAt (PROTOCOL §7).",
+      "required": ["projectId", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
+        "path": { "type": "string" }
+      }
+    },
     "FileReadResponse": {
       "type": "object",
       "required": ["content", "version", "hash"],
@@ -59,6 +182,37 @@
         "version": { "type": "integer", "description": "Monotonic file version on the node." },
         "hash": { "type": "string", "description": "SHA-256 of content." },
         "modifiedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "FileBrowseRequest": {
+      "type": "object",
+      "description": "Lists one directory of a project workspace. Paths are resolved and validated server-side; traversal attempts are rejected before any filesystem access.",
+      "required": ["projectId"],
+      "additionalProperties": false,
+      "properties": {
+        "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
+        "path": { "type": ["string", "null"], "default": null, "description": "Directory relative to the workspace root; null or '' means the root." }
+      }
+    },
+    "FileBrowseResponse": {
+      "type": "object",
+      "required": ["entries"],
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "kind"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "kind": { "enum": ["file", "directory", "symlink"] },
+              "size": { "type": ["integer", "null"], "minimum": 0 },
+              "modifiedAt": { "type": ["string", "null"], "format": "date-time" }
+            }
+          }
+        }
       }
     },
     "TerminalRequest": {
@@ -72,6 +226,27 @@
         "cwd": { "type": ["string", "null"] },
         "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
         "env": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Sanitized; never contains credentials from the vault." }
+      }
+    },
+    "TerminalCancelRequest": {
+      "type": "object",
+      "description": "Cancels a running terminal execution by its terminal id.",
+      "required": ["terminalId"],
+      "additionalProperties": false,
+      "properties": {
+        "terminalId": { "type": "string" }
+      }
+    },
+    "DiagnosticsRunRequest": {
+      "type": "object",
+      "description": "Runs node doctor checks. Returns DiagnosticsResult. Repair is a separate, explicitly-scoped operation not implemented in v1 desktop.",
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Optional subset of check ids; omitted means all checks."
+        }
       }
     },
     "DiagnosticsResult": {
@@ -97,6 +272,142 @@
         "evidence": { "type": ["string", "null"] },
         "recommendedAction": { "type": "string", "description": "Safe action text, possibly a repair command." },
         "autoRepairSafe": { "type": "boolean" }
+      }
+    },
+    "DeviceListRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "DeviceListResponse": {
+      "type": "object",
+      "required": ["devices"],
+      "additionalProperties": false,
+      "properties": {
+        "devices": { "type": "array", "items": { "$ref": "pairing.schema.json#/$defs/DeviceRecord" } }
+      }
+    },
+    "DeviceRevokeRequest": {
+      "type": "object",
+      "description": "Revokes a paired device. Immediate for new connections; any live stream for that device is closed at the next event boundary.",
+      "required": ["deviceId"],
+      "additionalProperties": false,
+      "properties": {
+        "deviceId": { "$ref": "identifiers.schema.json#/$defs/DeviceId" },
+        "forget": { "type": "boolean", "default": false, "description": "true also removes the device record (status 'forgotten'); false keeps it as 'revoked'." }
+      }
+    },
+    "ProjectListRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "ProjectListResponse": {
+      "type": "object",
+      "required": ["projects"],
+      "additionalProperties": false,
+      "properties": {
+        "projects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["projectId", "name"],
+            "additionalProperties": false,
+            "properties": {
+              "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
+              "name": { "type": "string" },
+              "path": { "type": ["string", "null"] },
+              "missing": { "type": "boolean", "description": "true when the registered workspace directory is absent from the drive." }
+            }
+          }
+        }
+      }
+    },
+    "ProjectCreateRequest": {
+      "type": "object",
+      "description": "Registers a project in the portable workspace registry. path=null creates a project directory under the portable drive.",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "path": { "type": ["string", "null"], "description": "External workspace to bind; null creates under data/projects." }
+      }
+    },
+    "ProjectOpenRequest": {
+      "type": "object",
+      "description": "Opens a registered project and returns its resolved workspace path and metadata.",
+      "required": ["projectId"],
+      "additionalProperties": false,
+      "properties": {
+        "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" }
+      }
+    },
+    "ProjectOpenResponse": {
+      "type": "object",
+      "required": ["projectId", "workspacePath"],
+      "additionalProperties": false,
+      "properties": {
+        "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
+        "workspacePath": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "SessionListRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" }
+      }
+    },
+    "SessionListResponse": {
+      "type": "object",
+      "required": ["sessions"],
+      "additionalProperties": false,
+      "properties": {
+        "sessions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["sessionId"],
+            "additionalProperties": false,
+            "properties": {
+              "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId" },
+              "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
+              "createdAt": { "type": "string", "format": "date-time" },
+              "updatedAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      }
+    },
+    "SessionCreateRequest": {
+      "type": "object",
+      "description": "Creates a harness session for a project. Supply sessionId to reopen an existing session.",
+      "required": ["projectId"],
+      "additionalProperties": false,
+      "properties": {
+        "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
+        "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId" }
+      }
+    },
+    "SessionReadRequest": {
+      "type": "object",
+      "description": "Reads the durable harness session transcript through the node. This is the conversation-content authority (event class 2); task state comes from the node event store instead.",
+      "required": ["sessionId"],
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId" },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "cursor": { "type": ["string", "null"], "description": "Opaque continuation cursor from a previous page." }
+      }
+    },
+    "SessionResumeRequest": {
+      "type": "object",
+      "description": "Marks a session as resumed by a client; the node tracks readership, it does not reopen the harness-internal turn.",
+      "required": ["sessionId"],
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId" }
       }
     },
     "UpdateApplyRequest": {

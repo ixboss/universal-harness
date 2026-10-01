@@ -23,6 +23,7 @@
         "TASK_NOT_FOUND",
         "TASK_ALREADY_DONE",
         "CONFLICT",
+        "INVALID_MESSAGE",
         "STORAGE_INSUFFICIENT",
         "STORAGE_READ_ONLY",
         "MIGRATION_REQUIRED",

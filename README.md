@@ -5,15 +5,23 @@
 run anywhere — a USB stick, a desktop, an Android phone — and be controllable from an iPhone/iPad
 over the local network, with no cloud dependency.
 
-> **Status: Phase 1 complete — Desktop Portable Core implemented (awaiting review).**
+> **Status: Phase 2 checkpoint — Universal Protocol node server implemented on the Phase 1 desktop core.**
 > Phase 0/0.1 delivered architecture, audit, protocol schemas, and skeletons. Phase 1 implements
 > the real desktop execution layer: bundled Node, pinned integrity-verified `@deepseek-ai/dsh`,
 > the SDK adapter, portable workspace/session management, diagnostics, and safe shutdown.
-> Verification status per platform is recorded honestly in
+> Phase 2 adds the Universal Protocol v1 node server: schema-validated envelopes, Ed25519
+> challenge-response authentication and single-use pairing tokens bound to the node identity,
+> scoped authorization, the task engine with durable event log (one fsynced record per state+event
+> commit), cursor replay and startup recovery, the workspace file API, and `uh serve`/`uh pair`
+> over a local stdio transport. Not yet implemented (deliberately): network transports
+> (TCP/TLS/WS/mDNS), terminal execution (hard-disabled), the `session.*`/`task.approve`
+> operations, and the iOS/Android clients. Automated suite: 121 tests passing on Windows
+> (`node --test tests/*.test.mjs`). Verification status per platform is recorded honestly in
 > [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md): **Windows x64 real-machine smoke test executed
 > (14/15 stages pass; stage 10 blocked by the provider account's own quota, not by the harness
-> chain)**, **Linux x64 and macOS: NOT TESTED** (no Linux/macOS host available). Phase 2 has not
-> started. See [docs/ROADMAP.md](docs/ROADMAP.md).
+> chain)**, **Linux x64 and macOS: NOT TESTED** (no Linux/macOS host available); the Phase 2
+> node's real-dsh end-to-end path is exercised with a fake executor only. See
+> [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## What Universal Harness is
 

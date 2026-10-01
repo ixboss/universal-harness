@@ -106,6 +106,7 @@ export function portablePaths(root = findRoot()) {
     sessions: path.join(data, 'sessions'),
     config: path.join(data, 'config'),
     workspace: path.join(data, 'workspace'),
+    state: path.join(data, 'state'), // node-owned durable state: the event log
     backups: path.join(data, 'backups'),
     logs: path.join(data, 'logs'),
     manifests: path.join(root, 'manifests'),

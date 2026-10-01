@@ -37,12 +37,25 @@
     },
     "PairRequest": {
       "type": "object",
-      "required": ["deviceName", "platform", "devicePublicKeyPem"],
+      "required": ["deviceName", "platform", "devicePublicKeyPem", "expectedNodeIdentitySha256"],
       "additionalProperties": false,
       "properties": {
         "deviceName": { "type": "string", "maxLength": 64 },
         "platform": { "enum": ["ios", "android", "web", "desktop"] },
-        "devicePublicKeyPem": { "type": "string", "description": "Long-lived device identity key (client-generated, stored in Keychain/Keystore)." }
+        "devicePublicKeyPem": { "type": "string", "description": "Long-lived device identity key (client-generated, stored in Keychain/Keystore)." },
+        "pairingToken": { "type": "string", "description": "The single-use token from the scanned pairing payload. Alone it authorises nothing; it is bound to nodeIdentitySha256." },
+        "expectedNodeIdentitySha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Fingerprint the client recorded out-of-band (from the pairing payload). Must equal the node's own identity fingerprint, else pairing aborts with NODE_IDENTITY_MISMATCH (NEG-PAIR-01)."
+        },
+        "sigB64": { "type": "string", "description": "Signature over the node.hello challengeB64 with the device private key. Proves key possession." },
+        "requestedScopes": {
+          "type": "array",
+          "items": { "$ref": "identifiers.schema.json#/$defs/ScopeToken" },
+          "description": "Scopes the client asks for at pairing; the node grants a subset (never terminal or node-admin automatically) and records exactly what it granted."
+        },
+        "clientChallengeB64": { "type": "string", "description": "Nonce the node signs with its identity private key in the response, proving node identity to the client." }
       }
     },
     "PairChallenge": {
@@ -61,6 +74,12 @@
       "properties": {
         "deviceId": { "$ref": "identifiers.schema.json#/$defs/DeviceId" },
         "sigB64": { "type": "string", "description": "Signature over the challenge. Verified by the node before storing the client key." },
+        "nodeSigB64": { "type": "string", "description": "The node's signature over clientChallengeB64. The client verifies it against the identity fingerprint bound in the pairing payload before storing any trust." },
+        "grantedScopes": {
+          "type": "array",
+          "items": { "$ref": "identifiers.schema.json#/$defs/ScopeToken" },
+          "description": "Scopes actually granted, which may be a subset of those requested."
+        },
         "requestedScopes": {
           "type": "array",
           "items": { "$ref": "identifiers.schema.json#/$defs/ScopeToken" },

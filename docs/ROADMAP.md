@@ -112,9 +112,30 @@ per the brief. See [RISK-REGISTER.md](RISK-REGISTER.md) R-20.
 Execution-node API (WSS + HTTPS), authentication, capability discovery, event streaming, task
 lifecycle, file API, terminal API, pairing, missed-event replay. Tested locally before iOS.
 
+**Checkpoint status (implemented, committed):** the Universal Protocol v1 node server runs over a
+local stdio transport (`uh serve`) with pairing (`uh pair`): schema-validated envelopes with
+per-message version checks; capability advertisement in `node.hello`; Ed25519 node identity and
+challenge-response device authentication; single-use pairing tokens persisted as SHA-256 hashes
+(cross-process between `uh pair` and `uh serve`), bound to the node identity (NEG-PAIR-01);
+central deny-by-default scope enforcement; a 10-state task engine with one fsynced NDJSON record
+per state+event commit; cursor replay with snapshot fallback; startup recovery that re-drives
+requeued tasks and never marks a vanished process as completed; durable cancellation of non-live
+tasks; the workspace file API (central path-safety choke point, optimistic concurrency); and an
+executor that drives the unmodified Phase 1 dsh adapter.
+
+**Deliberately not in this checkpoint:** network transports (WSS/HTTPS/mDNS discovery) — the
+interface is stdio/memory only until Phase 3 needs them; terminal execution (hard-disabled behind
+`TERMINAL_DISABLED`, its scope ungrantable); the `session.list/create/read/resume` and
+`task.approve` operations (removed from the advertisement until implemented); the iOS/Android
+clients; real-dsh task execution over the protocol (tests use a fake executor; the Phase 1
+adapter itself is real-machine tested separately).
+
 Definition of done: protocol conformance suite passing against the desktop node; fixture suite
 shared across stacks; negative-path tests (auth failure, revoked device, malformed request,
-version mismatch) green.
+version mismatch) green. Conformance and negative-path suites exist and pass
+(`tests/protocol-core.test.mjs`, `tests/server.test.mjs`, `tests/auth.test.mjs`,
+`tests/transport.test.mjs`); the cross-stack fixture sharing (Kotlin/Swift) remains open until
+Phases 3–4.
 
 ## Phase 3 — Android Execution Node
 

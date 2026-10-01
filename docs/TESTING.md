@@ -220,10 +220,12 @@ The JSON Schema files under `shared/protocol/v1/` are themselves testable immedi
 
 - `node tests/protocol/lint-schemas.mjs` — validates that every cross-file `$ref` resolves
   **and** that every `EventKind` maps to exactly one `DurabilityClass` (the machine-readable
-  durability contract). Passing today: 7 files, 62 refs, 0 problems.
-- A Phase 2 fixture suite validates sample envelope/event/operation payloads against the schemas
-  — identical fixtures shared by all three implementation stacks (core/, Kotlin `android/`,
-  Swift `ios/`) so the contract is proven identical across them.
+  durability contract). Passing today: 7 files, 90 refs, 0 problems.
+- The Phase 2 fixture suite now exists for the core stack: `tests/protocol-core.test.mjs`
+  validates sample envelope/event/operation payloads against these schemas (including
+  negative paths), and `tests/server.test.mjs` exercises the served protocol end-to-end over a
+  transport. Sharing the identical fixtures with the Kotlin `android/` and Swift `ios/` stacks
+  remains open until Phases 3–4.
 
 ## 7. Migration robustness (specific invariants)
 

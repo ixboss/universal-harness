@@ -12,6 +12,7 @@ import { setupRuntime } from '../core/runtime/setup.mjs';
 import { runDoctor, printDoctorReport } from '../core/diagnostics/mod.mjs';
 import { cmdExec, cmdSmoke, cmdRuntime } from '../core/cli/modes.mjs';
 import { cmdWorkspace, cmdSession, cmdMigrate, cmdBackup, cmdRestore } from '../core/cli/registry.mjs';
+import { cmdServe, cmdPair } from '../core/cli/serve.mjs';
 
 const USAGE = `Universal Harness — desktop portable core (Phase 1)
 
@@ -25,6 +26,8 @@ Commands:
   session <sub>         session index: list | show <id>
   exec "<prompt>"       one-shot: launch dsh SDK, initialize, prompt, stream, complete
   smoke                 full §18 chain incl. shutdown, restart, reopen and replay
+  serve                 run the Universal Protocol v1 node server on stdin/stdout
+  pair                  mint a single-use pairing payload bound to this node identity
   migrate check|apply   detect a moved workspace root and migrate safely
   backup [label]        create a versioned backup of Universal Harness metadata
   restore <label>       restore metadata backup (conflict-checked, never blind)
@@ -84,6 +87,8 @@ async function main() {
       case 'restore': return await cmdRestore(rest, { root, p, log });
       case 'exec': return await cmdExec(rest, { root, p, log });
       case 'smoke': return await cmdSmoke(rest, { root, p, log });
+      case 'serve': return await cmdServe(rest, { root, p, log });
+      case 'pair': return await cmdPair(rest, { root, p, log });
       default:
         process.stderr.write(`unknown command: ${cmd}\n\n${USAGE}`);
         return 2;
