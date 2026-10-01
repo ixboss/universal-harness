@@ -10,6 +10,10 @@ set(PROOT_ROOT "${PROJECT_ROOT}/third_party/proot/src")
 set(SHM_ROOT "${PROJECT_ROOT}/third_party/libandroid-shmem")
 set(TALLOC_ROOT "${PROJECT_ROOT}/third_party/talloc")
 
+# Universal Harness addition (Phase 3A): separate stdio pipes for the dsh SDK
+# NDJSON seam; see uh_spawn.c and com.universalharness.node.UhNativeProcess.
+add_library(uhspawn SHARED uh_spawn.c)
+
 add_library(pocketspawn SHARED pocket_spawn.c)
 
 add_library(talloc SHARED "${TALLOC_ROOT}/talloc.c")
@@ -108,7 +112,7 @@ target_compile_definitions(proot PRIVATE
 target_compile_options(proot PRIVATE
     -Wall -Wextra -O2
     "SHELL:-include string.h"
-    "SHELL:-include ${SHM_ROOT}/shm.h"
+    "SHELL:-include \"${SHM_ROOT}/shm.h\"" # UH: quoted; repo checkout paths may contain spaces
 )
 target_link_options(proot PRIVATE "-Wl,-z,noexecstack")
 target_link_libraries(proot PRIVATE talloc android-shmem)
@@ -130,6 +134,6 @@ add_custom_command(TARGET prootloader-carrier POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:prootloader>" "$<TARGET_FILE:prootloader-carrier>"
 )
 
-foreach(target pocketspawn talloc android-shmem proot proot-carrier prootloader-carrier)
+foreach(target uhspawn pocketspawn talloc android-shmem proot proot-carrier prootloader-carrier)
     target_link_options(${target} PRIVATE "-Wl,-z,max-page-size=16384")
 endforeach()

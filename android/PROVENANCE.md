@@ -55,6 +55,22 @@ written); see [ADR-003](../docs/adr/ADR-003-android-execution-node.md) for the r
 - No Android *implementation* exists yet at this baseline: this is the import, licensing, and
   runtime-target preparation only (ROADMAP.md Phase 3).
 
+## Adaptations to imported upstream files (Phase 3A, recorded per NOTICES rule 2)
+
+The following minimal changes were made to upstream files; all are additive or bug-fixing and
+none alters upstream behavior on the upstream's own paths:
+
+1. `app/src/main/cpp/CMakeLists.txt` — added the `uhspawn` shared-library target
+   (`uh_spawn.c`, new Universal Harness code, not an upstream change) and quoted the
+   `-include ${SHM_ROOT}/shm.h` compile flag, which breaks when the checkout path contains a
+   space (as this repository's does).
+2. `app/build.gradle.kts` — the two offline-bundle `Sync` tasks are guarded with `onlyIf` so
+   the build works without Mobile-Harness's GitHub-release bundle files (not part of this
+   repository); test dependencies for `kotlin("test")` and androidx.test were added.
+3. `app/src/main/java/com/jarves/mh/runtime/WorkspaceCheckpoints.kt` — snapshot keys now use
+   invariant separators (`invariantSeparatorsPath`); backslash keys broke the checkpoint
+   contract on Windows hosts (caught by upstream's own `MemoryBoundsTest`).
+
 ## Update procedure for future upstream refreshes
 
 1. Choose and record the new upstream commit SHA; re-verify it is credential-free (full-history

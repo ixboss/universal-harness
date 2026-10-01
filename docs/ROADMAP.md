@@ -145,7 +145,15 @@ security rationale and update procedure live in [android/PROVENANCE.md](../andro
 and [ADR-003](adr/ADR-003-android-execution-node.md)); read and record all vendored licenses
 (R-08 source-set closure done at import; bundle-time items close at first bundle build);
 restructure into execution-node architecture; add device identity, pairing, protocol server,
-persistent background tasks. **Phase boundaries remain: iOS stays Phase 4; Phase 5
+persistent background tasks.
+
+**Phase 3A checkpoint (2026-10-01): Android runtime foundation implemented** — pinned runtime
+acquisition (Ubuntu 20.04.5 arm64 base + Node v24.21.0 linux-arm64 + dsh 0.2.0-rc.2, all
+checksum-verified on download), hardened rootfs extraction, a new separate-stdio PRoot spawn
+bridge, the dsh SDK client with bounded teardown and restart reconciliation, the Android
+Keystore secret foundation, and 33 JVM unit tests on the host. Gradle debug/release builds pass
+on arm64-v8a. **R-01 stays unresolved**: Gate D (real ARM64 device execution of the §2a chain)
+is blocked on device availability — a build is not execution evidence. **Phase boundaries remain: iOS stays Phase 4; Phase 5
 synchronization and Phase 6 hardening stay excluded except as direct Android blockers; no
 upstream dsh modification (ADR-001).**
 

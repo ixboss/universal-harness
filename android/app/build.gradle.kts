@@ -32,20 +32,28 @@ val appUpdateManifestUrl =
 val runtimeBundleDir = rootProject.layout.projectDirectory.dir("dist/runtime-bundles")
 val generatedRuntimeAssets = layout.buildDirectory.dir("generated/runtime-assets")
 
+// Universal Harness adaptation (Phase 3A): the upstream Mobile-Harness release bundles are
+// not part of this repository (they live in upstream's GitHub releases only), so these Sync
+// tasks skip instead of failing when the bundle files are absent. Universal Harness builds
+// its own runtime on-device (com.universalharness.node.UhRuntimeInstaller).
 val prepareBundledAgentAssets = tasks.register<Sync>("prepareBundledAgentAssets") {
-    from(runtimeBundleDir.file("pocketdev-agy-arm64-2026.09.1.tar.zst"))
+    val src = runtimeBundleDir.file("pocketdev-agy-arm64-2026.09.1.tar.zst")
+    from(src)
     into(generatedRuntimeAssets.map { it.dir("shared/runtime") })
+    onlyIf { src.asFile.isFile }
 }
 
 val prepareOfflineRuntimeAssets = tasks.register<Sync>("prepareOfflineRuntimeAssets") {
-    from(
-        runtimeBundleDir.file("pocketdev-core-arm64-2026.09.5.tar.zst"),
-        runtimeBundleDir.file("pocketdev-claude-arm64-2026.09.1.tar.zst"),
-        runtimeBundleDir.file("pocketdev-python-arm64-2026.09.2.tar.zst"),
-        runtimeBundleDir.file("pocketdev-android-arm64-2026.09.1.tar.zst"),
-        runtimeBundleDir.file("pocketdev-dsh-arm64-2026.09.1.tar.zst"),
-    )
+    val sources = listOf(
+        "pocketdev-core-arm64-2026.09.5.tar.zst",
+        "pocketdev-claude-arm64-2026.09.1.tar.zst",
+        "pocketdev-python-arm64-2026.09.2.tar.zst",
+        "pocketdev-android-arm64-2026.09.1.tar.zst",
+        "pocketdev-dsh-arm64-2026.09.1.tar.zst",
+    ).map { runtimeBundleDir.file(it) }
+    from(sources)
     into(generatedRuntimeAssets.map { it.dir("offline/runtime") })
+    onlyIf { sources.any { it.asFile.isFile } }
 }
 
 fun buildConfigString(value: String): String =
@@ -202,6 +210,9 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250107")
+    testImplementation(kotlin("test")) // com.universalharness.node unit tests
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

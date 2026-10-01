@@ -20,7 +20,7 @@ Nothing here says "Verified" until a real test produces evidence recorded in [TE
 | Windows | x64 | Local (bundled Node) | **Smoke-executed — 14/15 stages pass** (stage 10 blocked by provider account quota, TESTING.md §1a) | **Real-chain verified** (hash-verified Node v24.21.0 + pinned dsh booted) | N/A in Phase 1 (Phase 2) | Smoke executed on real Windows 11 x64; **not fully verified** |
 | Linux | x64 | Local (bundled Node) | Automated-tested (source-level cross-check only) | Source-level (manifest hash pinned, code non-Windows-only) | N/A | **NOT TESTED** — no Linux host available (WSL not installed) |
 | macOS | arm64 (Apple Silicon) | Local (bundled Node) | Not tested | Source-level (manifest hash pinned) | N/A | **NOT TESTED — acceptable per brief §20** (no macOS host) |
-| Android | arm64 | Local via PRoot | **Unresolved (R-01)** — gated by real-device full chain (TESTING.md §2a) | Not implemented | Not implemented | Not implemented in Phase 1 (out of scope) |
+| Android | arm64 | Local via PRoot | **Unresolved (R-01)** — gated by real-device full chain (TESTING.md §2a); Phase 3A foundation implemented and host-built, device gate blocked on device availability ([ANDROID-RUNTIME.md](ANDROID-RUNTIME.md)) | Phase 3A: runtime foundation implemented (install/verify/bridge), not device-executed | Not implemented (Phase 3B+, out of 3A scope) | Import baseline + Phase 3A foundation; no device execution yet |
 | iPhone/iPadOS | arm64 | **Client only** | N/A (by design, [ADR-002](adr/ADR-002-ios-client-only.md)) | N/A | N/A | Not tested (no macOS host) |
 
 > **Why Windows is not "Verified" despite executing the chain:** the brief §18 requires the full
@@ -84,7 +84,7 @@ Nothing here says "Verified" until a real test produces evidence recorded in [TE
 | 2026-09-29 | Runtime integrity: hash mismatch is refused before launch | `tests/runtime.test.mjs` (hash-mismatch, corrupted-manifest, wrong-arch, tree-hash determinism) + `core/runtime/requireRuntime` | Automated-tested |
 | 2026-09-29 | Credentials never plaintext in the portable tree | `tests/security.test.mjs` (DPAPI round trip, config-never-plaintext, logger redaction) | Automated-tested |
 | — | dsh runs inside Android PRoot full chain (TESTING.md §2a) | none — not executed | **Unresolved (R-01)** |
-| — | Protocol v1 round-trips on a live node | schema-only (shared/protocol/) — Phase 2, not implemented | Not implemented |
+| — | Protocol v1 round-trips on a live node | Phase 2 checkpoint: server + tests (memory/stdio transports) | **Automated-tested** (tests/protocol-core, tests/server; no network transport yet) |
 | — | Linux x64 full chain | not executed — no Linux host (WSL not installed) | **NOT TESTED** |
 | — | macOS arm64 full chain | not executed — no macOS host (acceptable per brief §20) | **NOT TESTED** |
 
