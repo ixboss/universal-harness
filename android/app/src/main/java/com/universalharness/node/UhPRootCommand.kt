@@ -39,6 +39,7 @@ class UhPRootCommand(
         guestCommand: List<String>,
         environment: Map<String, String> = emptyMap(),
         emulateHardLinks: Boolean = false,
+        extraBinds: List<Pair<String, String>> = emptyList(),
     ): Command {
         val rootfs = paths.rootfsDir
         val proot = File(nativeLibraryDir, "libproot.so")
@@ -68,6 +69,11 @@ class UhPRootCommand(
                 }
             }
             add("-b"); add("${workspace.absolutePath}:${paths.guestWorkspace}")
+            // Phase 3B: extra host→guest binds. The staged JS node is mounted
+            // read-only so the guest runs the exact bytes the APK shipped.
+            for ((hostPath, guestPath) in extraBinds) {
+                add("-b"); add("$hostPath:$guestPath")
+            }
             add("-w"); add(paths.guestWorkspace)
             addAll(guestCommand)
         }

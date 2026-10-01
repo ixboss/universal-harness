@@ -32,6 +32,27 @@ val appUpdateManifestUrl =
 val runtimeBundleDir = rootProject.layout.projectDirectory.dir("dist/runtime-bundles")
 val generatedRuntimeAssets = layout.buildDirectory.dir("generated/runtime-assets")
 
+// Universal Harness Phase 3B: stage the JS node into the APK. The node has zero
+// runtime dependencies (pure ESM), so the guest runs exactly the same source as
+// desktop — no second implementation, no transpiled copy. The repository tree is
+// the single source of truth; this Sync task is what keeps them identical.
+// The repository root is the Android project's parent directory; the JS node staged
+// into the APK comes from exactly that tree (bin/, core/, manifests/, shared/).
+val repoRoot = rootProject.layout.projectDirectory.dir("..")
+val generatedUhJsAssets = layout.buildDirectory.dir("generated/uh-js-assets")
+val prepareUhJsAssets = tasks.register<Sync>("prepareUhJsAssets") {
+    from(repoRoot) {
+        include("bin/**")
+        include("core/**")
+        include("manifests/**")
+        include("shared/**")
+        include("package.json")
+        exclude("**/node_modules/**")
+        exclude("**/.git/**")
+    }
+    into(generatedUhJsAssets.map { it.dir("uh-js") })
+}
+
 // Universal Harness adaptation (Phase 3A): the upstream Mobile-Harness release bundles are
 // not part of this repository (they live in upstream's GitHub releases only), so these Sync
 // tasks skip instead of failing when the bundle files are absent. Universal Harness builds
@@ -125,6 +146,8 @@ android {
 
     sourceSets.getByName("offline").assets.srcDir(generatedRuntimeAssets.map { it.dir("offline") })
     sourceSets.getByName("main").assets.srcDir(generatedRuntimeAssets.map { it.dir("shared") })
+    // The staged JS node ships in every flavor's assets (it is the node itself).
+    sourceSets.getByName("main").assets.srcDir(generatedUhJsAssets)
 
     buildTypes {
         debug {
@@ -170,7 +193,7 @@ tasks.matching { it.name.startsWith("mergeOffline") && it.name.endsWith("Assets"
     .configureEach { dependsOn(prepareOfflineRuntimeAssets) }
 
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
-    .configureEach { dependsOn(prepareBundledAgentAssets) }
+    .configureEach { dependsOn(prepareBundledAgentAssets, prepareUhJsAssets) }
 
 tasks.matching { it.name.contains("lint", ignoreCase = true) }
     .configureEach { dependsOn(prepareBundledAgentAssets) }

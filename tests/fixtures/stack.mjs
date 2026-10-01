@@ -23,7 +23,7 @@ import { wireClient } from './wire.mjs';
 const SCOPES = ['read-only', 'project-session-control', 'task-control', 'file-modify'];
 
 /** A temp root + the same collaborator set `uh serve` builds. */
-export async function buildStack({ executorOptions = {} } = {}) {
+export async function buildStack({ executorOptions = {}, tokenTtlMs = null } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'uh-test-'));
   // The device-local tree is isolated under the temp root so parallel test
   // files never share — or pollute — the real OS device store.
@@ -32,7 +32,7 @@ export async function buildStack({ executorOptions = {} } = {}) {
     fs.mkdirSync(d, { recursive: true });
   }
   const identity = await loadOrCreateNodeIdentity({ p });
-  const auth = createAuthStore({ p, identity });
+  const auth = createAuthStore({ p, identity, ...(tokenTtlMs ? { tokenTtlMs } : {}) });
   const events = createEventStore({ p });
   const store = createWorkspaceStore({ root, p });
   store.init({});

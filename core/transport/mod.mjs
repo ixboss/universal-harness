@@ -106,9 +106,11 @@ export function encodeFrame(envelope) {
  *
  * Returns { transport, notify }. `notify` is the privileged handle the
  * transport's own I/O code uses to deliver inbound frames and lifecycle events;
- * it is not part of the public shape.
+ * it is not part of the public shape. Exported so a network adapter (Phase 3B)
+ * can wrap an accepted connection in the same contract the local transports
+ * use, without re-implementing the listener/bookkeeping shape.
  */
-function buildTransport({ send, teardown, describe }) {
+export function buildTransport({ send, teardown, describe }) {
   const listeners = { message: [], close: [], error: [] };
   let closed = false;
 

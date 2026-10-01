@@ -8,9 +8,9 @@
   "additionalProperties": false,
   "properties": {
     "nodeId": { "$ref": "identifiers.schema.json#/$defs/NodeId" },
-    "platform": { "enum": ["windows", "linux", "macos", "android"] },
-    "architecture": { "enum": ["x64", "arm64"] },
-    "nodeKind": { "enum": ["desktop", "android"] },
+    "platform": { "$ref": "#/$defs/Platform" },
+    "architecture": { "$ref": "#/$defs/Architecture" },
+    "nodeKind": { "$ref": "#/$defs/NodeKind" },
     "uhVersion": { "type": "string", "description": "Universal Harness semantic version of the node." },
     "dshVersion": { "type": ["string", "null"], "description": "Pinned DeepSeek Harness version known good on this node; null if none installed." },
     "protocolVersionRange": {
@@ -107,6 +107,15 @@
         },
         "freeBytes": { "type": "integer", "minimum": 0 }
       }
+    },
+    "Platform": {
+      "enum": ["windows", "linux", "macos", "android"],
+      "description": "The node's host platform. Android nodes report 'android' even though the guest Node process reports 'linux'."
+    },
+    "Architecture": { "enum": ["x64", "arm64"] },
+    "NodeKind": {
+      "enum": ["desktop", "android"],
+      "description": "'android' means the node is supervised by the Android runtime: terminal and update operations are never served and the loopback supervisor surface exists."
     }
   }
 }

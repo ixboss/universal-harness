@@ -39,7 +39,16 @@
         },
         "pairingOpen": { "type": "boolean", "description": "Node currently accepts pairing requests." },
         "dshVersion": { "type": ["string", "null"] },
-        "uhVersion": { "type": ["string", "null"] }
+        "uhVersion": { "type": ["string", "null"] },
+        "platform": {
+          "$ref": "capabilities.schema.json#/$defs/Platform",
+          "description": "The node's host platform (Phase 3B). A controller uses this, with nodeKind, to decide which capabilities to offer before its first request."
+        },
+        "architecture": { "type": ["string", "null"] },
+        "nodeKind": {
+          "$ref": "capabilities.schema.json#/$defs/NodeKind",
+          "description": "desktop or android. An android node is supervised by the Android runtime and never advertises terminal or update operations."
+        }
       }
     },
     "AuthConnect": {

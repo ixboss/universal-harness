@@ -44,7 +44,14 @@ const KNOWN_ERROR_CODES = new Set(Object.values(PERR));
 export function createNodeServer({
   root, p, identity, auth, events, workspace, sessions,
   executorFactory, log = null, uhVersion = '0.3.0', runtimeManager = null,
+  // Explicit platform/architecture/nodeKind for a supervised node. A Node
+  // process running inside the Android guest would otherwise report the
+  // guest kernel's values ('linux'/'desktop'); the supervisor that knows the
+  // real host declares them here (brief §8). Each defaults to the observed
+  // environment when unset, so desktop behaviour is unchanged.
+  nodeDescriptor = null,
 }) {
+  const descriptor = resolveNodeDescriptor(nodeDescriptor);
   // connectionId -> connection state
   const connections = new Map();
   // taskId -> live task handle (executor + subscribers)
@@ -62,8 +69,9 @@ export function createNodeServer({
     const rm = runtimeManager;
     return buildCapabilities({
       nodeId: identity.nodeId,
-      platform: process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux',
-      architecture: process.arch === 'arm64' ? 'arm64' : 'x64',
+      platform: descriptor.platform,
+      architecture: descriptor.architecture,
+      nodeKind: descriptor.nodeKind,
       uhVersion,
       dshVersion: rm?.manifest?.dsh?.version ?? null,
       operations: ADVERTISED_OPERATIONS,
@@ -391,12 +399,16 @@ export function createNodeServer({
 
     // The node greets first: identity, version range, the operation set it
     // actually serves, and the challenge nonce.
+    const caps = capabilities();
     send(transport, notificationEnvelope(KINDS.NODE_HELLO, {
       nodeId: identity.nodeId,
       protocolVersionRange: SUPPORTED_VERSION_RANGE,
       operations: ADVERTISED_OPERATIONS.slice(),
       challengeB64: state.challenge,
       pairingOpen: auth.pairingOpen,
+      platform: caps.platform,
+      architecture: caps.architecture,
+      nodeKind: caps.nodeKind,
       uhVersion,
       dshVersion: runtimeManager?.manifest?.dsh?.version ?? null,
     }));
@@ -411,6 +423,38 @@ export function createNodeServer({
     transport.onError((e) => warn(`connection ${connectionId} transport error: ${e?.message || e}`));
 
     return connectionId;
+  }
+
+  /**
+   * Verify a request-signed challenge for a stateless transport (the one-shot
+   * HTTP surface, PROTOCOL.md §1). The proof is identical to the streaming
+   * path — a signature by the paired device's private key, verified against its
+   * stored public key — but over a canonical digest of the request itself,
+   * because a stateless request shares no prior handshake nonce with the node.
+   * Constant-failure, like verifyChallenge: an unknown device and a bad
+   * signature are indistinguishable to the caller.
+   *
+   * @returns {{ok: boolean, code?: string, record?: object}}
+   */
+  function verifyRequestSignature({ deviceId, sigB64, canonical }) {
+    return auth.verifyChallenge({ deviceId, sigB64, challenge: canonical });
+  }
+
+  /**
+   * Establish an already-verified device session on a connection, out of band.
+   * Used by the HTTP adapter after verifyRequestSignature succeeds; the scopes
+   * come from the stored device record, exactly as auth.connect sets them, so
+   * the authorization gate is unchanged.
+   *
+   * @returns {boolean} true if the connection existed and is now authenticated
+   */
+  function authenticateConnection(connectionId, record) {
+    const state = connections.get(connectionId);
+    if (!state) return false;
+    state.authenticated = true;
+    state.deviceId = record.deviceId;
+    state.scopes = record.scopes || [];
+    return true;
   }
 
   function send(transport, env) {
@@ -490,13 +534,19 @@ export function createNodeServer({
 
     switch (kind) {
       case KINDS.NODE_HELLO: {
-        // A client may also send node.hello to declare its capabilities.
+        // A client may also send node.hello to declare its capabilities. The
+        // reply carries this node's platform/nodeKind so a controller can adapt
+        // its UI before its first real request (brief §8).
+        const caps = capabilities();
         send(transport, responseEnvelope(requestId, KINDS.NODE_HELLO, {
           nodeId: identity.nodeId,
           protocolVersionRange: SUPPORTED_VERSION_RANGE,
           operations: ADVERTISED_OPERATIONS.slice(),
           challengeB64: state.challenge,
           pairingOpen: auth.pairingOpen,
+          platform: caps.platform,
+          architecture: caps.architecture,
+          nodeKind: caps.nodeKind,
         }));
         return;
       }
@@ -689,6 +739,8 @@ export function createNodeServer({
 
   return {
     handleConnection,
+    authenticateConnection,
+    verifyRequestSignature,
     recover,
     capabilities,
     startTask,
@@ -706,6 +758,21 @@ export function createNodeServer({
       };
     },
   };
+}
+
+function resolveNodeDescriptor(nodeDescriptor) {
+  const observedPlatform = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux';
+  const descriptor = {
+    platform: process.env.UH_NODE_PLATFORM || observedPlatform,
+    architecture: process.arch === 'arm64' ? 'arm64' : process.env.UH_NODE_ARCH || 'x64',
+    nodeKind: process.env.UH_NODE_KIND || 'desktop',
+  };
+  if (nodeDescriptor && typeof nodeDescriptor === 'object') {
+    if (nodeDescriptor.platform) descriptor.platform = nodeDescriptor.platform;
+    if (nodeDescriptor.architecture) descriptor.architecture = nodeDescriptor.architecture;
+    if (nodeDescriptor.nodeKind) descriptor.nodeKind = nodeDescriptor.nodeKind;
+  }
+  return descriptor;
 }
 
 function mapPairFailure(code) {

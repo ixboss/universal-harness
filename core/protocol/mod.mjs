@@ -257,13 +257,18 @@ function invalid(message, code = PERR.INVALID_MESSAGE) {
  * The node's capability object, built from live state. `dshVersion` and storage
  * figures come from the runtime manager so the object can never drift from
  * reality.
+ *
+ * `nodeKind` distinguishes a desktop node from an Android node (brief §8). It
+ * defaults to 'desktop'; a node that is supervised by the Android runtime must
+ * declare 'android' explicitly, because a Node process cannot detect on its
+ * own that it runs inside the Android guest.
  */
-export function buildCapabilities({ nodeId, platform, architecture, uhVersion, dshVersion, operations, taskControls = { cancel: true, approveTool: false, pauseResume: false }, storage = null, pairingOpen = false, diagnosticsEnabled = true }) {
+export function buildCapabilities({ nodeId, platform, architecture, nodeKind = 'desktop', uhVersion, dshVersion, operations, taskControls = { cancel: true, approveTool: false, pauseResume: false }, storage = null, pairingOpen = false, diagnosticsEnabled = true }) {
   const caps = {
     nodeId,
     platform,
     architecture,
-    nodeKind: 'desktop',
+    nodeKind,
     uhVersion,
     dshVersion,
     protocolVersionRange: SUPPORTED_VERSION_RANGE,

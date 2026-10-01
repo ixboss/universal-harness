@@ -46,6 +46,19 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="User-started installation of the local coding environment" />
         </service>
+        <!--
+          Phase 3B: the Universal Harness LAN node. One TLS listener, advertised over NSD.
+          Pairing is always out of band (a payload the operator transfers); this service never
+          broadcasts a token or a fingerprint.
+        -->
+        <service
+            android:name="com.universalharness.node.NodeServerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-started Universal Harness LAN execution node" />
+        </service>
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"
