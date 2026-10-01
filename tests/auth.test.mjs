@@ -124,7 +124,7 @@ test('pairing: an expired token is rejected', async () => {
     const challenge = auth.newChallenge();
     const result = auth.pair({
       deviceName: 'phone', platform: 'ios', devicePublicKeyPem: key.publicKeyPem,
-      token: 'a-token-that-was-never-minted',
+      token: 'never-minted',
       expectedNodeIdentitySha256: pairing.nodeIdentitySha256,
       sigB64: key.sign(challenge), challenge, requestedScopes: ['read-only'],
     });
@@ -143,7 +143,7 @@ test('pairing: a wrong token is rejected, not accepted as a fresh pairing', asyn
     const challenge = auth.newChallenge();
     const bad = auth.pair({
       deviceName: 'other', platform: 'web', devicePublicKeyPem: key.publicKeyPem,
-      token: 'definitely-not-a-token',
+      token: 'not-the-token',
       expectedNodeIdentitySha256: identity.fingerprint,
       sigB64: key.sign(challenge), challenge, requestedScopes: ['read-only'],
     });
@@ -380,7 +380,7 @@ test('pairing: a wrong token does not burn the persisted token', async () => {
     const minter = createAuthStore({ p, identity });
     const pairing = minter.mintPairingPayload({ endpoint: 'memory://test' });
     const first = createAuthStore({ p, identity });
-    const wrong = pairWithToken(first, pairing, { token: 'definitely-not-a-token' });
+    const wrong = pairWithToken(first, pairing, { token: 'not-the-token' });
     assert.equal(wrong.ok, false);
     // The legitimate holder can still use the token.
     const second = createAuthStore({ p, identity });
