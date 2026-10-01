@@ -13,7 +13,7 @@ its status. This file is **regenerated at every release** from the actually-vend
 |---|---|---|
 | Universal Harness (new code here) | MIT ([LICENSE](LICENSE)) | authored |
 | `deepseek-ai/deepseek-harness` | **MIT** — verified via GitHub API `license` field (`spdx_id: MIT`) and repo `LICENSE` file | **bundled, unmodified** (npm `@deepseek-ai/dsh@0.2.0-rc.2`), integrity-recorded, driven only through the SDK adapter |
-| `techjarves/Mobile-Harness` | **MIT** — verified via GitHub API `license` field (`spdx_id: MIT`) | adapted, with git history, into `android/` (**Phase 3 — not yet imported**) |
+| `techjarves/Mobile-Harness` | **MIT** — verified via GitHub API `license` field (`spdx_id: MIT`); `LICENSE` file re-read verbatim at import ("Copyright (c) 2026 Mobile Harness Contributors") | adapted, imported as a **clean source snapshot at pinned commit `f0ba6730`** into `android/` (**Phase 3 baseline — imported**; git history intentionally not imported — see [android/PROVENANCE.md](android/PROVENANCE.md)) |
 | `techjarves/Deepseek-Harness-Portable` | **NONE** (`license: null`; no LICENSE file in tree) | **no code copied — design reference only** ([AUDIT.md §3.5](docs/AUDIT.md#35-licensing-verdict--clean-room-reimplementation)) |
 
 ## Direct dependencies (bundled in Phase 1)
@@ -29,16 +29,35 @@ its status. This file is **regenerated at every release** from the actually-vend
 > npm CLI performs the exact-pin install, which removes the pnpm license from the
 > direct-dependency set.
 
-## Android node (adapted from Mobile-Harness, MIT) — Phase 3, not yet imported
+## Android node (adapted from Mobile-Harness, MIT) — Phase 3 import baseline
 
-| Component | Upstream | License | Evidence status |
-|---|---|---|---|
-| Mobile-Harness (parent) | https://github.com/techjarves/Mobile-Harness | MIT | **Verified at audit** |
-| PRoot | `third_party/proot` — **git submodule**, termux fork, `VERSION "5.1.107.91"` (per audited `CMakeLists.txt`) | **must be read from the submodule at pinned commit** (historically GPL-2.0 in proot lineage) | **PENDING** — read at Phase 3 import |
-| talloc | `third_party/talloc` — vendored dir, API level 2.4.3 per `CMakeLists.txt` | **must be read from vendored dir** (Samba lineage, historically LGPL-3.0+) | **PENDING** — read at Phase 3 import |
-| libandroid-shmem | `third_party/libandroid-shmem` — **git submodule** | **must be read from the submodule at pinned commit** | **PENDING** — read at Phase 3 import |
-| Ubuntu 20.04 LTS arm64 rootfs | Ubuntu / Canonical | Ubuntu license terms (components individually Apache/MIT/GPL/etc.) | **PENDING** — distribution/redistribution terms recorded at bundle time |
-| Optional toolchains (Python, OpenJDK 17, Gradle, PHP) | respective upstreams | per-project licenses | record per toolchain when enabled |
+Imported 2026-10-01 as a clean source snapshot at pinned upstream commit
+`f0ba6730b1522ce3225cf84089305d6d1e7df905` (tree `0ae06e7b0238ab99039e832fd8cb4d64c67f7ad7`),
+no git history (see [android/PROVENANCE.md](android/PROVENANCE.md) for the security rationale
+and the credential-free verification). All license texts below were read verbatim from the
+imported files.
+
+| Component | Version/Commit | License | Required action | Status |
+|---|---|---|---|---|
+| Mobile-Harness (source tree) | `f0ba6730` | MIT — `android/LICENSE` (verbatim, "© 2026 Mobile Harness Contributors") | Preserve license/attribution; no other obligation (permissive) | **Recorded** |
+| PRoot (termux fork, © STMicroelectronics) | `61681c6481197e3c0cec6726075053adb740f235` = v5.1.107.91 | **GPL-2.0-or-later** — `android/third_party/proot/COPYING` (verbatim; source headers state "version 2 … or (at your option) any later version") | Preserve source + license (vendored in-tree); when a compiled proot ships in an APK, GPLv2 §3 is satisfied by the corresponding source in this public repo; state any patches | **Recorded** |
+| libandroid-shmem (© Pylypenko 2013, Fornwall 2017) | `7f0bd7e25dbdd146265aff7c6a890029e374622d` = v0.7 | **BSD-3-Clause** — `android/third_party/libandroid-shmem/LICENSE` (verbatim; clause set verified) | Reproduce notice + conditions + disclaimer in distributed materials | **Recorded** |
+| talloc (© Tridgell, Metzmacher; Samba lineage) | 2.4.3 (vendored in-tree) | **LGPL-3.0-or-later** — `android/third_party/talloc/LICENSE` (verbatim); built as its own shared `libtalloc.so` (SOVERSION 2, per `app/src/main/cpp/CMakeLists.txt`) | Keep LGPL text + notices; ship libtalloc.so as a separate shared library; relinkable sources = the vendored source (LGPL §4(d)) | **Recorded** |
+| Upstream attribution copies | — | — | `android/app/src/main/assets/licenses/` preserved verbatim (`proot-GPL-2.0.txt`, `talloc-LGPL-3.0-or-later.txt`, `libandroid-shmem-BSD-3-Clause.txt`, `claude-code-android-MIT.txt`) | **Preserved** |
+| Ubuntu 20.04 arm64 rootfs (ubuntu-base-20.04.5) | pinned image SHA-256 (upstream build script pins `f9b999af…`; **our bundle records its own SHA-256 at build time**) | **No single "Ubuntu license"** — aggregate of per-package licenses (git GPL-2.0-only, curl license, wget GPL-3+, Info-ZIP, xz-utils PD/GPL-2+, zstd BSD/GPLv2, ca-certificates GPL-2+/MPL, base packages mostly GPL/LGPL/MIT/BSD/Apache) | **Bundle-time discipline (not yet due — no bundle built):** record image URL + exact SHA-256, generated `dpkg -l` manifest, per-package `copyright` files; sources obtainable via the Ubuntu archive for the recorded package versions. Packages are separate programs, not linked into the APK. | **Pending bundle build — method recorded, no closure claimed** |
+| Node.js (Android bundle) | **v24.21.0** linux-arm64 (manifest pinned; upstream Mobile-Harness's script pins v24.19.0 — our bundle uses the UH manifest pin) | Node.js license (MIT grant; `LICENSE` enumerates bundled components: OpenSSL, V8, libuv, ICU, zlib, c-ares, undici, etc. — "mostly MIT, plus Apache 2.0, BSD-style, ISC, Unicode-3.0, public-domain") | Preserve the full Node `LICENSE` text (it is the bundled-components notice) | **Recorded** (same terms as the Phase 1 desktop set) |
+| npm | 11.x (inside the Node distribution) | Artistic-2.0 | Notice retention | **Recorded** |
+| `@deepseek-ai/dsh` | 0.2.0-rc.2 | **MIT** (verified from the published tarball's `package/LICENSE`: "Copyright (c) 2026 DeepSeek") | Notice retention; lockfile preserved for provenance | **Recorded** |
+| dsh npm dependency tree | 82 first-level dependencies individually verified via registry metadata (`npm view <name>@<version> license`), including the native-capable `koffi@3.1.1`, `node-addon-require-builtin@0.1.6`, and their linux-arm64 prebuilt packages | **All MIT — zero GPL/AGPL/LGPL/unlicensed/unknown flags found** | Notices; bundled transitively inside dsh's install tree (never re-distributed separately) | **Recorded** |
+
+**Additional third-party components present in the imported snapshot:** Gradle wrapper
+(`gradle/wrapper/` — Gradle performable distribution downloaded at build time, Apache-2.0 when
+used; the wrapper JAR is upstream's), AndroidX/Compose dependencies resolved by Gradle at build
+time under the Android Software Development Kit License Agreement and their own open-source
+licenses (recorded per actual build output when the app first builds), and `fastlane/` assets
+(MIT-adjacent tooling config, not distributed in the APK). These are build-time, not bundled,
+and are re-reviewed at the first APK build. No other bundled binaries exist in the snapshot
+(largest tracked file ≈ 1 MB image under `fastlane/graphics/`).
 
 ## Embedding rules adopted
 
@@ -58,15 +77,16 @@ its status. This file is **regenerated at every release** from the actually-vend
 
 > Universal Harness includes DeepSeek Harness (`@deepseek-ai/dsh`), © DeepSeek AI, MIT License.
 > Node.js is © Node.js contributors and is bundled under the Node.js license; npm is Artistic-2.0
-> and ships inside the Node distribution. Android execution node adapted from Mobile Harness by
-> techjarves, MIT License (Phase 3). See the individual notices in `third_party-licenses/` for
-> full terms.
+> and ships inside the Node distribution. The Android execution node adapts Mobile Harness
+> (techjarves, MIT), with PRoot (© STMicroelectronics, GPL-2.0-or-later, termux fork), talloc
+> (LGPL-3.0-or-later), and libandroid-shmem (BSD-3-Clause) vendored at pinned commits. See
+> [android/PROVENANCE.md](android/PROVENANCE.md), [android/LICENSE](android/LICENSE), and the
+> individual notices in `third_party-licenses/` for full terms.
 
 ---
 
-**Pending-closure note:** items marked PENDING are the Android-set licenses (proot, talloc,
-libandroid-shmem, Ubuntu rootfs), which cannot be recorded until the Phase 3 vendored import. The
-Phase 1 distribution set (Node.js, npm, pinned dsh including its transitive dependencies) is
-recorded above with hashes pinned in
-[manifests/runtime.manifest.json](manifests/runtime.manifest.json). R-08 remains open for the
-Android set and must be closed **before any distribution** of an Android build.
+**Pending-closure note:** the Android **source-set** licenses are now recorded with verbatim
+evidence (this closes the license-reading half of R-08). Remaining R-08 items are strictly
+bundle-time: the Ubuntu rootfs image's exact SHA-256 + `dpkg` manifest + per-package copyright
+recording, and a re-review of Gradle-resolved Android dependencies at the first APK build. Both
+happen when the runtime bundle is first built; no license closure is claimed for them here.

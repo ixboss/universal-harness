@@ -139,9 +139,15 @@ Phases 3–4.
 
 ## Phase 3 — Android Execution Node
 
-Import Mobile-Harness **with git history** into `android/` (approved approach); read and record
-all vendored licenses (R-08 closure); restructure into execution-node architecture; add device
-identity, pairing, protocol server, persistent background tasks.
+Import Mobile-Harness as a **clean source snapshot at pinned upstream commit `f0ba6730`** into
+`android/` — **no git history** (amended from the original "with git history" approach; the
+security rationale and update procedure live in [android/PROVENANCE.md](../android/PROVENANCE.md)
+and [ADR-003](adr/ADR-003-android-execution-node.md)); read and record all vendored licenses
+(R-08 source-set closure done at import; bundle-time items close at first bundle build);
+restructure into execution-node architecture; add device identity, pairing, protocol server,
+persistent background tasks. **Phase boundaries remain: iOS stays Phase 4; Phase 5
+synchronization and Phase 6 hardening stay excluded except as direct Android blockers; no
+upstream dsh modification (ADR-001).**
 
 **Definition of done includes the R-01 gate:** the real ARM64 full chain of
 [TESTING.md §2a](TESTING.md#2a-android-execution-full-chain-gate--mandatory-currently-unresolved) —

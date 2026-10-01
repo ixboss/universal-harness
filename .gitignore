@@ -22,14 +22,16 @@ models/
 *.iso
 
 # Portable mutable state (sample fixtures live under tests/fixtures/)
-data/
-cache/
+# Anchored to the repo root: unanchored `data/` shadowed imported Android
+# source under android/app/src/main/java/com/jarves/mh/data/ (Phase 3).
+/data/
+/cache/
 /diagnostics/
 *.part
-state/
-logs/
-temp/
-backups/
+/state/
+/logs/
+/temp/
+/backups/
 manifest/staged/
 *.portable-backup
 *.lock
@@ -44,14 +46,15 @@ manifest/staged/
 .env
 .env.*
 
-# Build outputs
-dist/
-build/
-out/
+# Build outputs (anchored to the repo root so imported upstream trees under
+# android/ are not shadowed — e.g. android/dist/runtime-bundles/manifest.json)
+/dist/
+/build/
+/out/
 *.tsbuildinfo
 .gradle/
 .idea/
-.vscode/
+/.vscode/
 local.properties
 
 # Native build outputs

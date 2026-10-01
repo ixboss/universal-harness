@@ -43,8 +43,11 @@ export const npmCliRelPath = isWindows
 /**
  * Every supported runtime target. Manifest entries must exist for all of them
  * so that a portable drive prepared on one OS can be verified on another.
+ * `linux-arm64` exists for the Phase 3 Android execution node (bundled arm64
+ * Node under the PRoot Ubuntu rootfs); it is a declared runtime target, NOT a
+ * verification claim — R-01 remains unresolved until the real-device gate.
  */
-export const SUPPORTED_TARGETS = ['win-x64', 'linux-x64', 'macos-arm64'];
+export const SUPPORTED_TARGETS = ['win-x64', 'linux-x64', 'macos-arm64', 'linux-arm64'];
 
 /**
  * Report platform facts used by diagnostics. Nothing here is secret.
