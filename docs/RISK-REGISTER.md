@@ -32,9 +32,10 @@ method / fallback for every major risk. **Unresolved risks are listed, not hidde
 
 ## Explicitly unresolved items (carried into Phase 1+ gates)
 
-1. **R-01 dsh-on-Android** — source-plausible, never executed. Gated behind a real ARM64
-   smoke test; the project does not claim Android works until that test passes
-   ([COMPATIBILITY.md](COMPATIBILITY.md)). No Android code exists in Phase 1.
+1. **R-01 dsh-on-Android** — **RESOLVED (2026-10-01)** on a real ARM64 device (physical moto g
+   5G plus, Android 11 / API 30): the runtime chain passed through clean shutdown and cold
+   restart. The provider-dependent stages remain separately blocked by R-21
+   ([ANDROID-RUNTIME.md](ANDROID-RUNTIME.md), [COMPATIBILITY.md](COMPATIBILITY.md)).
 2. **R-10 iOS build/test** — no macOS host. Swift client authored in Phase 4 with rows
    honestly marked Not tested.
 3. **R-08 vendored license texts** — proot/talloc/libandroid-shmem/rootfs must be read at

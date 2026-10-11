@@ -185,8 +185,7 @@ brief accepts).
   Protocol v1, prose + machine-readable JSON Schema.
 - [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) — platform matrix. Nothing is marked
   "Verified" without evidence.
-- [docs/RISK-REGISTER.md](docs/RISK-REGISTER.md) — risks, mitigations, and explicitly
-  unresolved items (notably: dsh-on-Android feasibility).
+- [docs/RISK-REGISTER.md](docs/RISK-REGISTER.md) — risks, mitigations, and open items.
 - [docs/ROADMAP.md](docs/ROADMAP.md) — implementation phases and the Phase 0 completion gate.
 - [docs/TESTING.md](docs/TESTING.md) — test strategy and matrix.
 

@@ -28,7 +28,7 @@ below. Nothing functional implemented (item 29).
 | 1–3. Repos inspected, upstream inspected, source-backed claims | [AUDIT.md](AUDIT.md) §1–§5 |
 | 4. dsh integration method + gaps | [AUDIT.md](AUDIT.md) §2, [PROTOCOL.md](PROTOCOL.md) §10 |
 | 5–8. Windows/Linux/macOS/Android execution architecture | [ARCHITECTURE.md](ARCHITECTURE.md) §3, §7 |
-| 9. Android dsh feasibility | [RISK-REGISTER.md](RISK-REGISTER.md) R-01 — **explicitly unresolved** |
+| 9. Android dsh feasibility | [RISK-REGISTER.md](RISK-REGISTER.md) R-01 — **RESOLVED** (real device, 2026-10-01) |
 | 10. Portable vs device-local state | [ARCHITECTURE.md](ARCHITECTURE.md) §4 |
 | 11. Workspace/session migration | [ARCHITECTURE.md](ARCHITECTURE.md) §14 |
 | 12. Protocol v1 machine-readable | [shared/protocol/v1/](../shared/protocol/v1/) + [PROTOCOL.md](PROTOCOL.md) |

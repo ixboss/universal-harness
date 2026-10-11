@@ -266,8 +266,9 @@ Kotlin app (Compose)
 - **Workspace portability differs by necessity**: Android cannot execute from arbitrary USB
   filesystems. Portable workspace arrives via SAF import into app-private storage; export and
   sync are explicit operations with checksum verification and conflict detection.
-- Android feasibility (dsh inside PRoot) is **UNRESOLVED** for this project — see
-  RISK-REGISTER.md R-01; real-device validation is a Phase 1 gate.
+- Android feasibility (dsh inside PRoot) is **RESOLVED** for the runtime chain (real-device
+  Gate D, 2026-10-01 — RISK-REGISTER.md R-01, [ANDROID-RUNTIME.md](ANDROID-RUNTIME.md)); the
+  provider-dependent stages remain blocked by account funding (R-21), not by the runtime.
 - Background limits: special-use foreground service + wake lock + battery-optimization
   exemption request; phantom-process killing is a documented risk (R-12).
 
@@ -419,7 +420,8 @@ instance, explains foreground-service mechanics, not stack traces.
 > [COMPATIBILITY.md](COMPATIBILITY.md) and [ROADMAP.md](ROADMAP.md).
 
 The Desktop Portable Core is implemented. Verification levels used below: **planned**,
-**source-level evidence**, **automated-tested** (in `node --test tests/*.test.mjs`, 41/41 pass),
+**source-level evidence**, **automated-tested** (in `node --test tests/*.test.mjs`, 41/41 at
+Phase 1 — **187 today**),
 **real-platform executed** (on this Windows 11 Pro x64 host), **NOT TESTED**.
 
 ### 20.1 Implemented layout (the concretization of §2)
@@ -467,7 +469,7 @@ falling back to plaintext (brief §15).
 | 4 | State model | Portable/device split **implemented + automated-tested** (secrets blob outside the tree; config-never-plaintext test). `$DSH_HOME` redirect means dsh's own state (sessions, settings) is portable by construction; UH owns only workspace/session *metadata*. |
 | 5 | Security/pairing | **Implemented (Phase 2 checkpoint, automated-tested)**: Ed25519 node identity, challenge-response device auth, single-use pairing tokens persisted as hashes and bound to the node identity (NEG-PAIR-01), central deny-by-default scopes, terminal hard-disabled. Phase 1 delivered: redaction (logs, diagnostics, error context), DPAPI secure storage, doctor plaintext-secret scan — **automated-tested**. |
 | 6 | Event durability / recovery | The seam's events are `session.event`/`session.status` (source-verified + executed against real dsh). Task-level durable events and cursors: **implemented (Phase 2 checkpoint, automated-tested)** — one fsynced NDJSON record per state+event commit, cursor replay with snapshot fallback, startup recovery. |
-| 7 | Android node | **Not implemented** — out of Phase 1 scope by the brief's boundary; R-01 stays unresolved. |
+| 7 | Android node | Out of Phase 1 scope. **Implemented since** (Phases 3A/3B/3C): PRoot runtime foundation, TLS node with pairing/durable replay, and the controller (`core/client` + `uh connect`); **R-01 RESOLVED** on a real device (2026-10-01). |
 | 8 | Update/rollback | **Not implemented** (Phase 6). Phase 1 carries the foundation only: pinned manifest, hash verification, whole-tree install-state hashing. |
 | 9 | Doctor/diagnostics | **Implemented**: 6 check groups, live launch/initialize/shutdown probe, Expected/Actual/Action FAIL format, JSON report to `diagnostics/` — **automated-tested** + executed on real Windows. |
 | 10 | Concurrency/locking | Not implemented (Phase 2): single-node desktop use only in Phase 1. |

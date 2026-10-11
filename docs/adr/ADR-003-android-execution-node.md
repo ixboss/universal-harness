@@ -1,6 +1,6 @@
 # ADR-003: Android uses local PRoot-based execution
 
-**Status:** Accepted — Phase 0 (implementation gated by R-01); **import strategy amended 2026-10-01** (clean snapshot replaces git-history import)
+**Status:** Accepted — Phase 0; **import strategy amended 2026-10-01** (clean snapshot replaces git-history import); **R-01 gate RESOLVED 2026-10-01** (real-device runtime chain — the Consequences/Risks below record the pre-resolution state; see [ANDROID-RUNTIME.md](../ANDROID-RUNTIME.md))
 **Date:** 2026-09-29 (amended 2026-10-01)
 
 ## Context
@@ -68,7 +68,7 @@ follow a different path than desktop.
 ## Consequences
 
 - A real ARM64 device is required for meaningful validation (R-11, R-12).
-- **R-01 is unresolved**: dsh running inside this PRoot environment is source-plausible but
+- **R-01 was unresolved at decision time** (now **RESOLVED** — see Status above): dsh running inside this PRoot environment is source-plausible but
   has never been executed by us. A real-device smoke test (Node → dsh → prompt → event →
   shutdown) is a hard **Phase 1/3 gate**. If it fails, fallback: ship the Android node
   client-first with execution deferred, per RISK-REGISTER.md — we will not fake support.
