@@ -73,22 +73,13 @@ Verification-level distinction (never blur these):
 | **automated test** | runs in CI against a fixture/harness |
 | **real-platform verification** | the 1a full chain above, executed on a real Windows x64 host |
 
-### 1a-2. Automated suite (Phase 1) — PASSING
+### 1a-2. Automated suite — PASSING
 
-`node --test tests/*.test.mjs` — **41 tests, 41 pass, 0 fail, ~26s**, no third-party test
-dependencies (`node:test` only). The fake dsh stub (`tests/fixtures/fake-dsh.mjs`) speaks the
-real SDK wire protocol with deterministic failure modes, so lifecycle behavior is testable
-offline.
-
-| File | Tests | Coverage |
-|---|---|---|
-| `tests/runtime.test.mjs` | 9 | status on a fresh tree; missing node/dsh detection; wrong arch; wrong version; hash mismatch; corrupted manifest; `verifyFileSha256` rejection; tree-hash determinism; install-state round trip |
-| `tests/workspace.test.mjs` | 7 | init + stable identity marker; reopen; moved root detection; missing project; marker/registry conflict; root detection walk-up |
-| `tests/sessions.test.mjs` | 5 | discovery of plain + Zstd session logs; replay; incomplete-turn detection; per-workspace listing; UH session-index lineage across reload |
-| `tests/process.test.mjs` | 9 | successful launch→prompt→stream→shutdown(exit 0); init failure → `DSH_INIT_FAILED`; credential failure (no key leaked); prompt failure with clean shutdown; abnormal exit → pending requests rejected as `DSH_ABNORMAL_EXIT`; hung runtime → SIGTERM escalation then SIGKILL; no orphan process; malformed stdout tolerated; unverified runtime refused at launch |
-| `tests/security.test.mjs` | 6 | redaction of keys/tokens/private keys; recursive context redaction; logger never writes a secret; env summary reports lengths only; Windows DPAPI round trip (sealed blob outside the portable tree); config never stores a secret as plaintext |
-| `tests/migration.test.mjs` | 5 | path change detection; migration applies with backup; conflict refusal; rollback safety; restore refuses to clobber newer live state |
-| `tests/protocol/lint-schemas.mjs` | 5 | cross-file `$ref` resolution; EventKind→DurabilityClass mapping (7 files, 62 refs, 0 problems) |
+`node --test tests/*.test.mjs` — **187 tests, 187 pass, 0 fail, ~35s** (2026-10-11), no
+third-party test dependencies (`node:test` only). The fake dsh stub
+(`tests/fixtures/fake-dsh.mjs`) speaks the real SDK wire protocol with deterministic failure
+modes, so lifecycle behavior is testable offline. The current per-file inventory is in
+[tests/README.md](../tests/README.md); schema lint is **7 files, 104 refs, 0 problems**.
 
 ### 1b. Desktop scenario matrix
 
@@ -112,10 +103,14 @@ offline.
 
 ## 2. Android
 
-### 2a. Android execution full-chain gate — MANDATORY, currently UNRESOLVED
+### 2a. Android execution full-chain gate — MANDATORY; runtime chain RESOLVED (2026-10-01)
 
-dsh-on-Android is **not verified** — and is not claimed as verified — until this entire chain
-passes on a **real ARM64 Android device**:
+The chain below was executed end-to-end on a **real ARM64 Android device** (physical moto g 5G
+plus, nairo, Android 11 / API 30, arm64-v8a) through clean shutdown and cold restart — **R-01 is
+RESOLVED** for the runtime chain (evidence: [ANDROID-RUNTIME.md](ANDROID-RUNTIME.md),
+[COMPATIBILITY.md](COMPATIBILITY.md)). The provider-dependent stages (prompt → streaming event →
+durable session event) remain separately blocked by provider-account funding (R-21), not by the
+runtime:
 
 ```
 Android app → PRoot → Ubuntu arm64 userspace → bundled arm64 Node → dsh (SDK)
@@ -136,7 +131,7 @@ path is *not* evidence for this chain.
 | Clean install | real-device | |
 | Runtime/rootfs extraction + verification | integration (download logic automated) | SHA-256 stage |
 | PRoot startup | real-device | |
-| dsh startup inside PRoot | **real-device — gating (R-01)** | unresolved risk |
+| dsh startup inside PRoot | **real-device — gating (R-01)** | resolved on the moto g 5G plus (runtime chain); provider stages remain R-21 |
 | Project creation | real-device | |
 | Task execution + streaming | real-device | |
 | Background task continuation | real-device | foreground service survival |
@@ -220,7 +215,7 @@ The JSON Schema files under `shared/protocol/v1/` are themselves testable immedi
 
 - `node tests/protocol/lint-schemas.mjs` — validates that every cross-file `$ref` resolves
   **and** that every `EventKind` maps to exactly one `DurabilityClass` (the machine-readable
-  durability contract). Passing today: 7 files, 90 refs, 0 problems.
+  durability contract). Passing today: 7 files, 104 refs, 0 problems.
 - The Phase 2 fixture suite now exists for the core stack: `tests/protocol-core.test.mjs`
   validates sample envelope/event/operation payloads against these schemas (including
   negative paths), and `tests/server.test.mjs` exercises the served protocol end-to-end over a

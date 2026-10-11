@@ -412,6 +412,12 @@ instance, explains foreground-service mechanics, not stack traces.
 
 ## 20. Phase 1 implementation status (2026-09-29)
 
+> **Snapshot notice.** This section records the Phase 1 status as of 2026-09-29. Later phases
+> superseded parts of it: **R-01 is RESOLVED** (real-device Android runtime chain, 2026-10-01,
+> [ANDROID-RUNTIME.md](ANDROID-RUNTIME.md)), the network node + controller exist (Phases 3B/3C),
+> and the automated suite has grown from 41 to **187** tests. For current per-platform status see
+> [COMPATIBILITY.md](COMPATIBILITY.md) and [ROADMAP.md](ROADMAP.md).
+
 The Desktop Portable Core is implemented. Verification levels used below: **planned**,
 **source-level evidence**, **automated-tested** (in `node --test tests/*.test.mjs`, 41/41 pass),
 **real-platform executed** (on this Windows 11 Pro x64 host), **NOT TESTED**.

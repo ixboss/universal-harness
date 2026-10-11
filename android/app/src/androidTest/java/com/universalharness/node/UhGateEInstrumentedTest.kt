@@ -397,7 +397,10 @@ class UhGateEInstrumentedTest {
             }
             val host = endpoint.host.takeIf { it != "0.0.0.0" } ?: (lanAddress() ?: "127.0.0.1")
             // Phase 3C: the controller gate needs one payload per controller
-            // identity (tokens are single-use). -e uhPayloadCount 2 mints two.
+            // identity (tokens are single-use). NOTE: the node holds ONE
+            // unconsumed pending token at a time, so minting N>1 writes N files
+            // but only the LAST token stays live — run the gate one phase per
+            // node run (see tests/manual/README.md).
             val payloadCount = (args.getString("uhPayloadCount", "1").toIntOrNull() ?: 1).coerceIn(1, 4)
             val minted = mutableListOf<org.json.JSONObject>()
             for (i in 0 until payloadCount) {

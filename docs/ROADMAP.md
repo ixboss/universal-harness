@@ -172,7 +172,7 @@ external to this repository and identical to the Windows stage-10 block. Those s
 run later with a funded credential; they do not reopen R-01, whose gate is the runtime chain.
 
 **Definition of done includes the R-01 gate:** the real ARM64 full chain of
-[TESTING.md §2a](TESTING.md#2a-android-execution-full-chain-gate--mandatory-currently-unresolved) —
+[TESTING.md §2a](TESTING.md#2a-android-execution-full-chain-gate--mandatory-runtime-chain-resolved-2026-10-01) —
 app → PRoot → Ubuntu arm64 → bundled arm64 Node → dsh SDK → `initialize` → prompt → streaming
 event → durable session event → shutdown → restart → reconnect → session/task state recovery.
 A partial pass (PRoot + Node alone) is **not** success. If any stage fails, the exact blocker is
