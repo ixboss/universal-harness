@@ -21,7 +21,7 @@ Nothing here says "Verified" until a real test produces evidence recorded in [TE
 | Linux | x64 | Local (bundled Node) | Automated-tested (source-level cross-check only) | Source-level (manifest hash pinned, code non-Windows-only) | N/A | **NOT TESTED** — no Linux host available (WSL not installed) |
 | macOS | arm64 (Apple Silicon) | Local (bundled Node) | Not tested | Source-level (manifest hash pinned) | N/A | **NOT TESTED — acceptable per brief §20** (no macOS host) |
 | Android | arm64 | Local via PRoot | **Real-device verified (R-01 RESOLVED)** — TESTING.md §2a core chain executed on a physical moto g 5G plus (Android 11 / API 30, arm64-v8a): PRoot → Ubuntu 20.04.5 arm64 → Node v24.21.0 (`process.arch` == `arm64`) → `dsh --version` == `0.2.0-rc.2` → `dsh --profile sdk` → JSON-RPC `initialize` (`serverInfo`) → clean `shutdown` (exit 0); cold restart with reconciliation; no orphaned guest processes. Provider-prompt stages remain blocked by account funding (R-21), not by the runtime ([ANDROID-RUNTIME.md](ANDROID-RUNTIME.md)) | Phase 3A: runtime foundation implemented and **device-executed** (2026-10-01) | **Phase 3B and Phase 3C real-device verified** — TLS node listener with ALPN framing + one-shot HTTP, Ed25519 challenge-response, single-use identity-bound pairing tokens, scoped authorization (deny-by-default), durable event replay with RecoverySnapshot, Gate E instrumented 9/9 on the device + workstation LAN script 22/22 (2026-09-30). 3C: TLS surface unchanged; mDNS/NSD advertisement (`_universal-harness._tcp.`); 3C (session operations, cursor-paginated history, `clientRequestId` idempotency, bounded connections, `diagnostics.run`, `core/client`, `uh connect`) is implemented and verified against a **Windows desktop node** (Gate F 28/28, `uh connect` live end-to-end) **and against the physical device over Wi-Fi (Gate F 28/28, 2026-10-11)** | Real ARM64 device; full chain through clean shutdown |
-| iPhone/iPadOS | arm64 | **Client only** | N/A (by design, [ADR-002](adr/ADR-002-ios-client-only.md)) | N/A | N/A | Not tested (no macOS host) |
+| iPhone/iPadOS | arm64 | **Retired** — out of product scope ([ADR-010](adr/ADR-010-iphone-ipad-retired.md)) | N/A | N/A | N/A | Retired 2026-10-11; no client planned |
 
 > **Why Windows is not "Verified" despite executing the chain:** the brief §18 requires the full
 > chain *including model completion* to pass on a real Windows x64 host. It was executed there
@@ -63,7 +63,7 @@ Nothing here says "Verified" until a real test produces evidence recorded in [TE
 ## Unsupported platforms (inherited scope; deliberately out of range)
 
 - Windows ARM64, Linux ARM64/musl, Intel macOS (upstream wrapper scope, AUDIT §3.4)
-- iOS/iPadOS local execution (architecturally excluded, ADR-002)
+- iOS/iPadOS: out of product scope ([ADR-010](adr/ADR-010-iphone-ipad-retired.md))
 
 ## Runtime requirements (pinned targets — actually installed and verified in Phase 1)
 
@@ -73,7 +73,6 @@ Nothing here says "Verified" until a real test produces evidence recorded in [TE
 | Harness | **`@deepseek-ai/dsh` 0.2.0-rc.2** | Exact pin via bundled npm (`--omit=dev --no-audit --no-fund --exact`); SHA-512 integrity read from the generated lockfile and recorded in `manifests/runtime.manifest.json`. |
 | Native deps (`koffi`, `node-pty`) | dsh's own dependency tree | Verified to load under the bundled Node's ABI on win-x64 (smoke stage 04); native modules are never built or patched by Universal Harness. |
 | Android | 9+ API 28+, arm64-v8a only (per upstream CMake guard) | NDK 26.1.10909125, CMake 3.22.1, JDK 17 — Phase 3, not in Phase 1 scope |
-| iOS/iPadOS | TBD (Phase 4) | Swift/SwiftUI; buildable only on macOS |
 | Desktop filesystems | NTFS, ext4, APFS, exFAT | exFAT = no-symlink mode enforced; only NTFS exercised so far |
 
 ## Evidence log

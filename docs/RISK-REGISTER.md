@@ -16,7 +16,7 @@ method / fallback for every major risk. **Unresolved risks are listed, not hidde
 | R-07 | Pairing/authentication weakness exposes command execution | Low | Critical | **Hardened first-contact trust (Phase 0.1)**: QR binds node identity + cert SHA-256 fingerprints; client verifies presented identity during TLS handshake before any authentication/scopes/DeviceRecord (ADR-007); challenge-response + TLS; discovery grants nothing; terminal scope explicit; audit logging; redaction; LAN-only default | Threat review + fuzzing of auth paths; **negative test NEG-PAIR-01** (stolen token + different node identity MUST fail) + full negative-path suite (TESTING.md) | Revoke on suspicion; disable pairing in untrusted LANs | Mitigating (TOFU gap closed) |
 | R-08 | Third-party licensing conflict blocks distribution | Medium | High | Repo A excluded entirely (no license); vendored licenses read verbatim at import (proot/talloc/libandroid-shmem/rootfs/Node/pnpm); notices regenerated per release | License audit script comparing vendored trees to records | Replace component or mark affected edition undistributable | Open |
 | R-09 | Runtime distribution legality/size (Node per-platform, offline bundles ~900MB) | Medium | Medium | Lazy per-platform install; online/offline editions; checksums; CDN-independent mirror list acceptable | Release pipeline produces reproducible artifacts | Ship online-only edition | Open |
-| R-10 | iOS client cannot be built/tested (Windows-only host) | Certain | Medium | Protocol locked via schemas first so the client is real, not a mock; iOS rows stay "Not tested" until a Mac exists | Manual iOS build + on-device tests later | Ship protocol-identical web client as interim control surface | Unresolved (environmental) |
+| R-10 | iOS client cannot be built/tested (Windows-only host) | Certain | Medium | **Moot** — the iOS client is retired; there is nothing to build or test (ADR-010) | — | — | **Closed 2026-10-11 (moot)** |
 | R-11 | Android background execution limits kill long tasks | High | High | Special-use foreground service + wake lock + battery-exemption request + supervisor reconciliation; orphan-task recovery on restart | Real-device background soak test (TESTING.md §2) | Task state preserved; user notified to grant exemption | Mitigating |
 | R-12 | PRoot limitations break tools (no systemd/KVM/mounts; ncurses terminal rendering) | High | Medium | Documented limitations (ARCHITECTURE §19); toolchain caveats surfaced per project kind | Real-device capability matrix | Feature-aware capability negotiation hides unsupported ops | Open |
 | R-13 | USB disconnect mid-write corrupts portable state | Medium | High | Atomic writes; append-only checksummed logs; finalize markers; recovery on next boot; Prepare-for-Eject workflow | Interrupted-write fault injection tests | Backup restore; degraded read-only mode | Mitigating |
@@ -37,8 +37,8 @@ method / fallback for every major risk. **Unresolved risks are listed, not hidde
    5G plus, Android 11 / API 30): the runtime chain passed through clean shutdown and cold
    restart. The provider-dependent stages remain separately blocked by R-21
    ([ANDROID-RUNTIME.md](ANDROID-RUNTIME.md), [COMPATIBILITY.md](COMPATIBILITY.md)).
-2. **R-10 iOS build/test** — no macOS host. Swift client authored in Phase 4 with rows
-   honestly marked Not tested.
+2. **R-10 iOS build/test** — **closed 2026-10-11**: iPhone/iPad are out of product scope
+   ([ADR-010](adr/ADR-010-iphone-ipad-retired.md)), so there is no iOS client to build or test.
 3. **R-08 vendored license texts** — proot/talloc/libandroid-shmem/rootfs must be read at
    Android import (Phase 3) before any distribution. Phase 1 closure: Node + dsh + npm notices
    ARE recorded (THIRD_PARTY_NOTICES.md); pnpm is no longer used (the bundled npm installs dsh).

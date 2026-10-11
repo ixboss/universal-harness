@@ -37,11 +37,11 @@ over forking, unless a demonstrated technical reason is recorded in the ADR.
 | Universal Protocol (envelope, events, ops) | new | **REIMPLEMENT** | Does not exist in either repo (AUDIT §4.6) |
 | Execution-node server (WSS/HTTPS, auth, replay) | new | **REIMPLEMENT** | Does not exist in either repo |
 | Discovery + pairing (mDNS, QR, challenge-response, scopes) | new | **REIMPLEMENT** | Does not exist in either repo |
-| iOS/iPadOS client | new | **REIMPLEMENT** | Client-only control surface (ADR-002) |
+| iOS/iPadOS client | new | **RETIRED** | Out of product scope ([ADR-010](adr/ADR-010-iphone-ipad-retired.md)); no client planned |
 | Sync / conflict detection / backups / storage accounting | new | **REIMPLEMENT** | No conflict handling exists upstream of our own design |
 | Diagnostics (doctor) | DSH-Portable concept + new | **REIMPLEMENT** | Machine-readable diagnostic model with severities and repair hints |
 | Web-UI scraping as a control mechanism | — | **DO NOT USE** | The browser UI is a human surface; protocol must be authoritative. `dsh --profile sdk` exists precisely for programmatic control |
-| iOS/iPadOS local Harness execution | — | **DO NOT USE** | ADR-002: iOS is a control client; the Linux runtime does not run on iOS |
+| iOS/iPadOS local Harness execution | — | **DO NOT USE** | The Linux runtime does not run on iOS; the platform is out of product scope ([ADR-010](adr/ADR-010-iphone-ipad-retired.md)) |
 | Forking / rewriting DeepSeek Harness internals | — | **DO NOT USE** | ADR-001; the brief forbids replacing the agent, reasoning, orchestration, or task execution |
 | Repo A's source code | DSH-Portable | **DO NOT USE** | Unlicensed; no copying under any circumstance (AUDIT §3.5) |
 | Repo A's plaintext credential behavior | DSH-Portable | **DO NOT USE** | Inherited flaw; ADR-007 mandates encryption at rest |
@@ -92,7 +92,7 @@ repo A's *expression* is off-limits. Our migration layer improves on the referen
 ways: backups before every destructive change (not just session logs), strict idempotency,
 schema-version gating with fail-safe behavior, and interruption recovery.
 
-**Protocol, server, discovery, pairing, iOS, sync, diagnostics** are all new; neither audited
+**Protocol, server, discovery, pairing, sync, diagnostics** are all new; neither audited
 repository contains any remote-control capability (AUDIT §4.6).
 
 ### DO NOT USE — and the reasoning
@@ -100,8 +100,8 @@ repository contains any remote-control capability (AUDIT §4.6).
 - **Web-UI scraping:** tempting but wrong. The node must be the source of truth for task state,
   and a browser surface cannot give us durable, versioned, replayable events. The `sdk` profile
   exists for exactly this purpose.
-- **iOS local execution:** technically incoherent (no Linux runtime on iOS) and explicitly
-  out of scope (ADR-002).
+- **iOS local execution:** technically incoherent (no Linux runtime on iOS); the platform is out
+  of product scope ([ADR-010](adr/ADR-010-iphone-ipad-retired.md)).
 - **Forking dsh:** would freeze us against a fast-moving upstream and violate the brief's
   "not a replacement" principle. Adapters absorb any gap.
 - **Repo A source code / its plaintext credentials:** licensing and security respectively.
@@ -115,7 +115,6 @@ repository contains any remote-control capability (AUDIT §4.6).
 | Android node (adapted from Mobile-Harness + node server) | ~40% |
 | Portable desktop core (clean-room wrapper: launcher, runtime, migration, doctor, update) | ~25% |
 | Universal Protocol + execution-node server (desktop + Android) | ~20% |
-| iOS client | ~10% |
 | Sync / conflict / backup / storage tooling | ~5% |
 
 These are planning estimates for ROADMAP sequencing, not commitments.

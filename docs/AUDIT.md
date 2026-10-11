@@ -314,8 +314,8 @@ Android/JVM (OpenJDK 17 + Gradle), C/C++, PHP.
 
 **Repository B has no remote-control capability whatsoever.** `network/` contains only
 `GitHubClient` and `ProviderApiClient` (outbound HTTP). There is no server, no discovery, no
-pairing, no protocol, no iOS story. The Universal Protocol, pairing, identity model, and the
-entire iOS client are **net-new work** (see [REUSE-MAP.md](REUSE-MAP.md)).
+pairing, no protocol. The Universal Protocol, pairing, identity model, and the controller are
+**net-new work** (see [REUSE-MAP.md](REUSE-MAP.md)).
 
 ---
 

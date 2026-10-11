@@ -18,18 +18,17 @@ unless §20 says so.
 │  Portable Environment + Execution Nodes + Adapter + Protocol +       │
 │  Portable State/Migration + Security + Remote Control + Recovery     │
 └──────────────────────────────────────────────────────────────────────┘
-        │                          │                         │
-   ┌────┴─────┐              ┌─────┴─────┐             ┌─────┴─────┐
-   │ Desktop  │              │ Android   │             │ iPhone    │
-   │ nodes    │              │ node      │             │ / iPad    │
-   │ Win/Lin/ │              │ (PRoot)   │             │ control   │
-   │ macOS    │              │           │             │ client    │
-   └────┬─────┘              └─────┬─────┘             └─────┬─────┘
-        │                          │                         │
-        └──────────┬───────────────┴──────────┬──────────────┘
-                   │   Universal Protocol v1  │
-                   │   (WSS/HTTPS, LAN)       │
-                   ▼                          ▼
+        │                          │
+   ┌────┴─────┐              ┌─────┴─────┐
+   │ Desktop  │              │ Android   │
+   │ nodes    │              │ node      │
+   │ Win/Lin/ │              │ (PRoot)   │
+   │ macOS    │              │           │
+   └────┬─────┘              └─────┬─────┘
+        │                          │
+        └──────────┬───────────────┘
+                   │  Universal Protocol v1 (TLS/HTTPS, LAN)
+                   ▼
          ┌──────────────────┐      ┌──────────────────┐
          │ dsh --profile sdk│      │  dsh --profile   │
          │ (JSON-RPC stdio) │      │  sdk (JSON-RPC)  │
@@ -51,8 +50,9 @@ we build an adapter and record the gap (PROTOCOL.md §10).
 
 - **Execution node** — Windows x64, Linux x64, macOS arm64 (bundled Node runtimes), Android
   arm64 (PRoot Ubuntu arm64). Owns processes, tasks, and authoritative state.
-- **Control client** — iPhone/iPad (native SwiftUI) and, later, browser clients. Observes and
-  controls. Never owns tasks (ADR-002, ADR-005).
+- **Control client** — the `uh connect` CLI and the `core/client` controller library. Observes
+  and controls. Never owns tasks (ADR-005). iPhone/iPad are out of product scope
+  ([ADR-010](adr/ADR-010-iphone-ipad-retired.md)).
 
 ## 2. Portable distribution layout
 
@@ -182,7 +182,6 @@ Credentials are **never plaintext**, portability notwithstanding (ADR-007):
   device-local (machine-bound keystore where available, passphrase-derived otherwise). Losing
   the key yields ciphertext, not secrets. Re- provisioning key → re-entering API keys.
 - Android: Keystore-backed (`ApiKeyVault` design, AUDIT §4.3).
-- iOS: Keychain.
 - QR codes, logs, diagnostics, backups, and protocol messages **redact** secrets by design.
 
 This deliberately closes the inherited flaw from repo A ("credentials travel in plaintext"). The
@@ -200,8 +199,8 @@ trade-off — a restored backup prompts for re-authentication — is accepted.
 | `Device` (client) | `deviceId` (uuid) paired | node registry | name, pubkey, scopes, last seen |
 | `EventStream` | monotonic `eventId` per node | node | basis of missed-event replay (§7) |
 
-Relationships: `Project A → Session X → Task Y → owned by Node 1`. The iPhone observes and
-controls Task Y; it is not the owner (ADR-005).
+Relationships: `Project A → Session X → Task Y → owned by Node 1`. The control client observes
+and controls Task Y; it is not the owner (ADR-005).
 
 ## 5. Security, discovery, and pairing (summary; PROTOCOL.md §4 detail)
 
@@ -301,7 +300,7 @@ portable root, runtime presence + integrity, harness install, permissions, works
 sessions (schema-version validity), credentials, configuration, network, remote server status,
 pairing state, Android runtime state (on Android nodes), update state.
 
-Consumed by: CLI (table output), desktop UI, Android UI, iOS client (protocol `diagnostics`
+Consumed by: CLI (table output), desktop UI, Android UI (protocol `diagnostics`
 operation). Repairs the system can perform safely are offered; everything else is an explicit
 command with rationale.
 
@@ -384,8 +383,8 @@ an additive capability, never a dependency.
 ## 16. Notifications
 
 Local, node-originated, subscription-based over the protocol: task completed/failed, agent
-waiting for input, approval required, device disconnected, update available. iOS notifications
-are delivered while the app is connected; no push service is required for the core product.
+waiting for input, approval required, device disconnected, update available. Notifications are
+delivered to a connected controller; no push service is required for the core product.
 
 ## 17. Storage accounting
 
@@ -407,7 +406,7 @@ instance, explains foreground-service mechanics, not stack traces.
   documented, not hidden.
 - PRoot is not a security boundary (AUDIT §4.5); sandbox policy stays upstream's.
 - Windows ARM64 / Linux ARM64 desktop / Intel macOS / musl Linux: unsupported (inherited scope).
-- iOS local execution: impossible, out of scope (ADR-002).
+- iPhone/iPad: out of product scope ([ADR-010](adr/ADR-010-iphone-ipad-retired.md)).
 
 ---
 
@@ -463,7 +462,7 @@ falling back to plaintext (brief §15).
 
 | § | Area | Phase 1 status |
 |---|---|---|
-| 1 | System topology | Desktop half implemented: CLI/UI → UH Core → runtime manager → SDK adapter → unmodified `dsh --profile sdk` → bundled Node. The node side of the right half (Universal Protocol server) is now implemented for the local stdio transport (Phase 2 checkpoint); the clients (iOS/Android) and network transports are not. |
+| 1 | System topology | Desktop half implemented: CLI/UI → UH Core → runtime manager → SDK adapter → unmodified `dsh --profile sdk` → bundled Node. The node side of the right half (Universal Protocol server) is now implemented for the local stdio transport (Phase 2 checkpoint); the Android client and network transports are not. |
 | 2 | Portable layout | **Implemented + automated-tested** (paths, root discovery, validation, relative-path resolution). Verified live on NTFS; exFAT no-symlink mode holds (no symlinks emitted). |
 | 3 | Desktop node | **Implemented**: shims exec the bundled node by relative path; `DSH_HOME` redirect; `setup/doctor/smoke/exec/migrate/backup/restore/workspace/session/runtime/version/serve/pair` commands. `serve`/`pair` arrived with the Phase 2 checkpoint (local stdio only); `web`/`update` are Phase 6 — not implemented. |
 | 4 | State model | Portable/device split **implemented + automated-tested** (secrets blob outside the tree; config-never-plaintext test). `$DSH_HOME` redirect means dsh's own state (sessions, settings) is portable by construction; UH owns only workspace/session *metadata*. |

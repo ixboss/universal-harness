@@ -1,6 +1,9 @@
 # ADR-002: iOS/iPadOS is a control client only
 
-**Status:** Accepted — Phase 0
+**Status:** Accepted — Phase 0. **Superseded in part 2026-10-11 by
+[ADR-010](ADR-010-iphone-ipad-retired.md): iPhone/iPad are retired from the product scope
+entirely (no native client, no browser controller).** The reasoning below is retained as the
+historical record of why iOS could never have been an execution host.
 **Date:** 2026-09-29
 
 ## Context

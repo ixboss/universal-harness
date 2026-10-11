@@ -2,8 +2,8 @@
 
 **Universal Harness** is a portable, cross-platform infrastructure layer that makes
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`@deepseek-ai/dsh`, MIT)
-run anywhere — a USB stick, a desktop, an Android phone — and be controllable from an iPhone/iPad
-over the local network, with no cloud dependency.
+run anywhere — a USB stick, a desktop, an Android phone — and be controllable from another
+machine over the local network, with no cloud dependency.
 
 > **Status: Phase 3C — controller and session foundation.** Phases 0/0.1 (architecture, schemas),
 > 1 (portable desktop core), 2 (Universal Protocol v1 node server), 3A (Android runtime
@@ -16,7 +16,7 @@ over the local network, with no cloud dependency.
 > library, and the `uh connect` controller CLI) are implemented and verified on a Windows
 > desktop node (Gate F 28/28 and a live `uh connect` end-to-end pass) **and against the physical
 > Android device over Wi-Fi (Gate F 28/28)**. Still deliberately out of scope:
-> iOS client (Phase 4), synchronization (Phase 5), hardening soak (Phase 6), the update system,
+> synchronization (Phase 5), hardening soak (Phase 6), the update system,
 > and terminal execution (hard-disabled). Automated suite: 187 tests passing on Windows
 > (`node --test tests/*.test.mjs`); Android JVM suite 270/270 across both flavors. Verification
 > status per platform is recorded honestly in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md):
@@ -52,7 +52,10 @@ AI/execution layer — always unmodified, always driven through an adapter
 | Linux | x64 | **Execution node** |
 | macOS | Apple Silicon (arm64) | **Execution node** |
 | Android | arm64 | **Execution node** (PRoot Linux userspace) |
-| iPhone / iPad | arm64 | **Control client only** — never runs the Harness ([ADR-002](docs/adr/ADR-002-ios-client-only.md)) |
+
+The controller surface is the `uh connect` CLI and the `core/client` library; it runs on the
+desktop platforms and drives a node over the LAN. iPhone/iPad are **out of product scope**
+([ADR-010](docs/adr/ADR-010-iphone-ipad-retired.md)).
 
 ## Key properties
 
@@ -63,7 +66,7 @@ AI/execution layer — always unmodified, always driven through an adapter
   supported and marked offline rather than corrupted when unavailable.
 - **Session migration** — host-specific paths are rewritten when crossing platforms;
   conversation content is never rewritten; backups precede every destructive change.
-- **Node-authoritative tasks** — a task keeps running when the iPhone disconnects; missed
+- **Node-authoritative tasks** — a task keeps running when the controller disconnects; missed
   events are replayed on reconnect ([ADR-005](docs/adr/ADR-005-node-authoritative-state.md)).
 - **LAN-first, offline-capable** — mDNS discovery, QR pairing, encrypted authenticated
   transport. Pairing binds the node's cryptographic identity into the QR payload, so a stolen
@@ -82,7 +85,7 @@ AI/execution layer — always unmodified, always driven through an adapter
 ```
 universal-harness/
 ├── docs/                   AUDIT, ARCHITECTURE, REUSE-MAP, PROTOCOL, COMPATIBILITY,
-│                           ROADMAP, TESTING, RISK-REGISTER, adr/ADR-001..008
+│                           ROADMAP, TESTING, RISK-REGISTER, adr/ADR-001..010
 ├── bin/                     uh.mjs CLI + UniversalHarness.cmd / .sh launcher shims
 ├── manifests/               runtime.manifest.json — pinned Node + dsh with hashes
 ├── core/                    runtime manager, SDK adapter, workspace/sessions,
@@ -108,7 +111,6 @@ universal-harness/
 │   └── server/              execution-node server (Phase 2)
 ├── desktop/                 launcher + per-platform entry scripts (windows/linux/macos)
 ├── android/                 Android execution node (Phase 3: adapted Mobile-Harness)
-├── ios/                     iOS/iPadOS control client (Phase 4, Swift)
 ├── shared/protocol/         machine-readable protocol contract (JSON Schema)
 ├── tests/                   automated suite (187 tests) + protocol validators
 └── third_party/             vendored components (with their LICENSE files)
@@ -151,7 +153,7 @@ Implemented and automated-tested (the full suite is now 187 tests — see [docs/
   `uh` CLI (`setup`, `doctor`, `runtime`, `workspace`, `session`, `migrate`, `backup`, `restore`,
   `exec`, `smoke`, `version`).
 
-Not in Phase 1 scope (by the brief's strict boundary): Android, PRoot, iOS, LAN discovery,
+Not in Phase 1 scope (by the brief's strict boundary): Android, PRoot, LAN discovery,
 pairing, the Universal Protocol server, remote control, cloud backend, event sync, distributed
 orchestration, Mobile-Harness import, and any dsh fork — none of these are implemented.
 

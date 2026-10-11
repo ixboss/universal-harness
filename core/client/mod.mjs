@@ -1,8 +1,8 @@
 // Universal Harness — the controller half of Universal Protocol v1 (Phase 3C).
 //
 // One client library for every controller shape (the `uh connect` CLI today; a
-// desktop UI, the Android app, and a future iOS client follow the same wire
-// semantics). It reuses — never re-implements — the Phase 3B security model:
+// desktop UI and the Android app follow the same wire semantics). It reuses —
+// never re-implements — the Phase 3B security model:
 //
 //   * TLS with a MANDATORY certificate fingerprint pin (core/transport);
 //     there is no unpinned connection, exactly as on the node side.

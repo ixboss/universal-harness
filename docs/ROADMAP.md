@@ -110,7 +110,7 @@ per the brief. See [RISK-REGISTER.md](RISK-REGISTER.md) R-20.
 ## Phase 2 — Universal Protocol & Node Server
 
 Execution-node API (WSS + HTTPS), authentication, capability discovery, event streaming, task
-lifecycle, file API, terminal API, pairing, missed-event replay. Tested locally before iOS.
+lifecycle, file API, terminal API, pairing, missed-event replay.
 
 **Checkpoint status (implemented, committed):** the Universal Protocol v1 node server runs over a
 local stdio transport (`uh serve`) with pairing (`uh pair`): schema-validated envelopes with
@@ -126,16 +126,16 @@ executor that drives the unmodified Phase 1 dsh adapter.
 **Deliberately not in this checkpoint:** network transports (WSS/HTTPS/mDNS discovery) — the
 interface is stdio/memory only until Phase 3 needs them; terminal execution (hard-disabled behind
 `TERMINAL_DISABLED`, its scope ungrantable); the `session.list/create/read/resume` and
-`task.approve` operations (removed from the advertisement until implemented); the iOS/Android
-clients; real-dsh task execution over the protocol (tests use a fake executor; the Phase 1
+`task.approve` operations (removed from the advertisement until implemented); the Android
+client; real-dsh task execution over the protocol (tests use a fake executor; the Phase 1
 adapter itself is real-machine tested separately).
 
 Definition of done: protocol conformance suite passing against the desktop node; fixture suite
 shared across stacks; negative-path tests (auth failure, revoked device, malformed request,
 version mismatch) green. Conformance and negative-path suites exist and pass
 (`tests/protocol-core.test.mjs`, `tests/server.test.mjs`, `tests/auth.test.mjs`,
-`tests/transport.test.mjs`); the cross-stack fixture sharing (Kotlin/Swift) remains open until
-Phases 3–4.
+`tests/transport.test.mjs`); the cross-stack fixture sharing with the Kotlin `android/` stack
+remains open.
 
 ## Phase 3 — Android Execution Node
 
@@ -152,7 +152,7 @@ acquisition (Ubuntu 20.04.5 arm64 base + Node v24.21.0 linux-arm64 + dsh 0.2.0-r
 checksum-verified on download), hardened rootfs extraction, a new separate-stdio PRoot spawn
 bridge, the dsh SDK client with bounded teardown and restart reconciliation, the Android
 Keystore secret foundation, and 33 JVM unit tests on the host. Gradle debug/release builds pass
-on arm64-v8a. **Phase boundaries remain: iOS stays Phase 4; Phase 5
+on arm64-v8a. **Phase boundaries remain: Phase 5
 synchronization and Phase 6 hardening stay excluded except as direct Android blockers; no
 upstream dsh modification (ADR-001).**
 
@@ -240,16 +240,19 @@ cursor-paginated history and multi-controller isolation all verified). Evidence:
 `diagnostics/gate-f/gatef-device-evidence.txt`. Provider-backed completion remains blocked by R-21
 (environmental, unchanged).
 
-**Out of scope (unchanged):** iOS (Phase 4), synchronization (Phase 5), hardening soak (Phase 6),
+**Out of scope (unchanged):** synchronization (Phase 5), hardening soak (Phase 6),
 update system, terminal execution, node-admin auto-grant, upstream dsh modification.
 
-## Phase 4 — iOS Client
+## Phase 4 — (Retired) iPhone/iPad client
 
-Swift/SwiftUI: discovery, QR pairing, device list, projects, sessions, task streaming,
-terminal, file browser, logs, notifications, reconnect/resume.
+**Retired 2026-10-11 by [ADR-010](adr/ADR-010-iphone-ipad-retired.md).** Phase 4 planned a native
+Swift/SwiftUI iPhone/iPad control client. A browser-based Web Controller was then evaluated as a
+lower-complexity alternative and also rejected. Both are out of product scope: neither can be
+built or verified on this host without Apple tooling or a public domain/certificate, and neither
+advances the core mission.
 
-Definition of done: builds on macOS; real-device tests of TESTING.md §4 pass. Until then all iOS
-rows remain **Not tested** (R-10).
+No deliverable remains. The phase number is kept (not renumbered) so existing cross-references and
+history stay valid. The controller surface is the `uh connect` CLI and the `core/client` library.
 
 ## Phase 5 — Cross-Platform Synchronization
 
@@ -263,7 +266,7 @@ performance, storage, battery/background soak, real-device workflows A–F from 
 
 ## Phase 7 — Packaging & Release
 
-Desktop portable packages (per platform), Android APK, iOS build, docs, checksums, release
+Desktop portable packages (per platform), Android APK, docs, checksums, release
 notes, regenerated THIRD_PARTY_NOTICES.md, compatibility matrix updated with real evidence.
 
 ---

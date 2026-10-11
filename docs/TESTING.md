@@ -2,8 +2,8 @@
 
 **Phase 1 update (2026-09-29).** Test matrix per [ARCHITECTURE.md](ARCHITECTURE.md) and the brief
 §30. Every scenario is categorized: **automated** (runs in CI, no device), **integration**
-(harnessing real subsystems on a desktop), **real-device** (requires Windows/Linux/macOS/Android,
-and/or an iPhone), or **not yet testable** (blocking environment - see
+(harnessing real subsystems on a desktop), **real-device** (requires Windows/Linux/macOS/Android),
+or **not yet testable** (blocking environment - see
 [COMPATIBILITY.md](COMPATIBILITY.md)). Nothing is marked Passed until a test actually passed and
 produced evidence.
 
@@ -186,15 +186,13 @@ re-derivation, and the no-false-task-state guarantee.
 | Duplicate / replayed events | automated | De-duplicated by eventId; no double-application of state |
 | eventId gap handling | automated | Live events consume no ids; client treats any id > cursor as "next" (no arithmetic assumptions) |
 
-## 4. iOS client
+## 4. iPhone/iPad client — RETIRED (ADR-010)
 
-| Scenario | Category | Notes |
-|---|---|---|
-| QR pairing | real-device | no macOS host available now → **not yet testable** on this machine; code authored in Phase 4 |
-| LAN discovery, connection loss, reconnect | real-device | |
-| Background/foreground transitions | real-device | |
-| Task monitoring, notifications | real-device | |
-| File browsing, terminal, session resume | real-device | |
+Retired 2026-10-11. iPhone/iPad are out of product scope, so the scenarios once planned here (QR
+pairing; LAN discovery, connection loss and reconnect; background/foreground transitions; task
+monitoring and notifications; file browsing / session resume) have **no deliverable and no test
+plan**. The rows that previously read "not yet testable on this machine" are now **moot rather
+than blocked**. See [ADR-010](adr/ADR-010-iphone-ipad-retired.md).
 
 ## 5. Cross-platform end-to-end ("Definition of Done" workflows from the brief)
 
@@ -203,9 +201,14 @@ re-derivation, and the no-false-task-state guarantee.
 | A: USB on Windows → create project → session → safe eject | real-device |
 | B: same USB on Linux → project/session persist, conversation continues | real-device |
 | C: Android workspace import/sync → local harness → continue project | real-device |
-| D: Android node ↔ iPhone pairing → streaming → iPhone lock → Android continues → reconnect restores state | real-device |
-| E: Windows node from iPhone: discover, pair, terminal command, inspect project, monitor agent | real-device |
-| F: iPhone disconnects → execution continues → reconnect → missed state synchronized | real-device |
+| D: Android node ↔ iPhone pairing → streaming → iPhone lock → Android continues → reconnect restores state | **RETIRED (ADR-010)** |
+| E: Windows node from iPhone: discover, pair, terminal command, inspect project, monitor agent | **RETIRED (ADR-010)** |
+| F: iPhone disconnects → execution continues → reconnect → missed state synchronized | **RETIRED (ADR-010)** |
+
+Workflows **A–C** remain the live definition-of-done workflows. D–F were framed around a physical
+iPhone and are retired with the platform; the node-authoritative properties they exercised
+(disconnect → execution continues → reconnect restores state) are covered for the CLI/controller
+by the Phase 3C controller gate (`tests/manual/gate-f-controller.mjs`).
 
 The brief is explicit: **if these workflows do not work reliably, the project is not finished.**
 
@@ -219,8 +222,8 @@ The JSON Schema files under `shared/protocol/v1/` are themselves testable immedi
 - The Phase 2 fixture suite now exists for the core stack: `tests/protocol-core.test.mjs`
   validates sample envelope/event/operation payloads against these schemas (including
   negative paths), and `tests/server.test.mjs` exercises the served protocol end-to-end over a
-  transport. Sharing the identical fixtures with the Kotlin `android/` and Swift `ios/` stacks
-  remains open until Phases 3–4.
+  transport. Sharing the identical fixtures with the Kotlin `android/` stack remains open (the
+  Swift `ios/` stack is retired — [ADR-010](adr/ADR-010-iphone-ipad-retired.md)).
 
 ## 7. Migration robustness (specific invariants)
 

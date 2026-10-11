@@ -1,7 +1,8 @@
 # Universal Protocol v1
 
-**Phase 0 deliverable.** The wire contract between control clients (iPhone/iPad, later
-browser) and execution nodes (Windows/Linux/macOS/Android). The machine-readable contract is
+**Phase 0 deliverable.** The wire contract between control clients (the `uh connect` CLI and the
+`core/client` library; the protocol is client-agnostic) and execution nodes
+(Windows/Linux/macOS/Android). The machine-readable contract is
 authoritative and lives in [shared/protocol/v1/](../shared/protocol/v1/); this document is its
 prose companion and states the rules the schemas cannot express.
 

@@ -71,8 +71,8 @@ Android device in this pass.
 
 - `android/` — instrumented tests (Gate D/E); the Phase 3C device gate (Gate F) is pending a
   connected device
-- `ios/` — client tests, macOS-host only (Phase 4; not testable on this host, R-10)
-- `e2e/` — realistic workflows A–F from the brief (Phase 6)
+- `e2e/` — realistic workflows A–C from the brief (Phase 6); D–F were iPhone-framed and are
+  retired ([ADR-010](../docs/adr/ADR-010-iphone-ipad-retired.md))
 
 ## Standing rules
 

@@ -1,7 +1,7 @@
 # shared
 
-Language-neutral, shared contracts. The one place where the three implementation stacks
-(TypeScript `core/`, Kotlin `android/`, Swift `ios/`) must agree — see TESTING.md §6.
+Language-neutral, shared contracts. The one place where the implementation stacks
+(TypeScript `core/`, Kotlin `android/`) must agree — see TESTING.md §6.
 
 ## shared/protocol/
 
