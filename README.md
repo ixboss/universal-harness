@@ -5,23 +5,26 @@
 run anywhere — a USB stick, a desktop, an Android phone — and be controllable from an iPhone/iPad
 over the local network, with no cloud dependency.
 
-> **Status: Phase 2 checkpoint — Universal Protocol node server implemented on the Phase 1 desktop core.**
-> Phase 0/0.1 delivered architecture, audit, protocol schemas, and skeletons. Phase 1 implements
-> the real desktop execution layer: bundled Node, pinned integrity-verified `@deepseek-ai/dsh`,
-> the SDK adapter, portable workspace/session management, diagnostics, and safe shutdown.
-> Phase 2 adds the Universal Protocol v1 node server: schema-validated envelopes, Ed25519
-> challenge-response authentication and single-use pairing tokens bound to the node identity,
-> scoped authorization, the task engine with durable event log (one fsynced record per state+event
-> commit), cursor replay and startup recovery, the workspace file API, and `uh serve`/`uh pair`
-> over a local stdio transport. Not yet implemented (deliberately): network transports
-> (TCP/TLS/WS/mDNS), terminal execution (hard-disabled), the `session.*`/`task.approve`
-> operations, and the iOS/Android clients. Automated suite: 121 tests passing on Windows
-> (`node --test tests/*.test.mjs`). Verification status per platform is recorded honestly in
-> [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md): **Windows x64 real-machine smoke test executed
-> (14/15 stages pass; stage 10 blocked by the provider account's own quota, not by the harness
-> chain)**, **Linux x64 and macOS: NOT TESTED** (no Linux/macOS host available); the Phase 2
-> node's real-dsh end-to-end path is exercised with a fake executor only. See
-> [docs/ROADMAP.md](docs/ROADMAP.md).
+> **Status: Phase 3C — controller and session foundation.** Phases 0/0.1 (architecture, schemas),
+> 1 (portable desktop core), 2 (Universal Protocol v1 node server), 3A (Android runtime
+> foundation; R-01 RESOLVED on a real moto g 5G plus), 3B (Android network transport, discovery
+> over mDNS/NSD, and secure pairing — TLS node listener with ALPN framing, pinned certificates,
+> Ed25519 challenge-response, identity-bound pairing, durable event replay; verified on real
+> hardware and over cross-device LAN), and 3C (session operations with linked-continuation
+> semantics per ADR-009, cursor-paginated task history, `clientRequestId` idempotent task
+> submission, bounded connections, real `diagnostics.run`, the `core/client` UniversalClient
+> library, and the `uh connect` controller CLI) are implemented and verified on a Windows
+> desktop node (Gate F 28/28 and a live `uh connect` end-to-end pass). Still deliberately out of scope:
+> iOS client (Phase 4), synchronization (Phase 5), hardening soak (Phase 6), the update system,
+> and terminal execution (hard-disabled). Automated suite: 187 tests passing on Windows
+> (`node --test tests/*.test.mjs`); Android JVM suite 270/270 across both flavors. Verification
+> status per platform is recorded honestly in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md):
+> **Windows x64 smoke-executed (14/15; stage 10 blocked by the provider account's own quota —
+> R-21)**, **Android: real-device verified through the Phase 3A runtime chain and the Phase 3B
+> network/pairing surface (Gate D 8/8, Gate E 9/9 on the device); the Phase 3C controller gate was
+> NOT run against the physical device (unreachable on the LAN at re-run time) and is recorded as
+> NOT EXECUTED — provider completion stages are blocked by R-21**, **Linux/macOS: NOT TESTED** (no host).
+> See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## What Universal Harness is
 
@@ -106,7 +109,7 @@ universal-harness/
 ├── android/                 Android execution node (Phase 3: adapted Mobile-Harness)
 ├── ios/                     iOS/iPadOS control client (Phase 4, Swift)
 ├── shared/protocol/         machine-readable protocol contract (JSON Schema)
-├── tests/                   automated suite (41 tests) + protocol validators
+├── tests/                   automated suite (187 tests) + protocol validators
 └── third_party/             vendored components (with their LICENSE files)
 ```
 
@@ -115,7 +118,7 @@ The *portable distribution layout* (what ends up on the USB stick) is defined in
 
 ## Phase 1 — what is implemented
 
-Implemented and automated-tested (41/41 tests pass, see [docs/TESTING.md](docs/TESTING.md)):
+Implemented and automated-tested (the full suite is now 187 tests — see [docs/TESTING.md](docs/TESTING.md)):
 
 - **Bundled runtime** — Node v24.21.0 per platform, downloaded from nodejs.org with SHA-256
   verified *before* unpacking, and a whole-tree hash recorded on install so tampering is

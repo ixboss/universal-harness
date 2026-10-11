@@ -33,6 +33,15 @@ export const DEFAULT_CONFIG = {
     maxTokens: null,
     timeouts: {},
   },
+  // Bounded connection management for the network listener (Phase 3C). The
+  // defaults keep room for several legitimate LAN controllers while capping
+  // the established-stream surface; idleTimeoutMs reaps a connection silent
+  // in BOTH directions for the whole window (an observing controller that is
+  // receiving events is never idle).
+  server: {
+    maxConnections: 32,
+    idleTimeoutMs: 300000,
+  },
   logging: { level: 'info' },
 };
 

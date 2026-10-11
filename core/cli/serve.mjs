@@ -29,6 +29,7 @@ import { createNetworkNodeListener, createLoopbackNodeListener } from '../../cor
 import { createDshExecutor } from '../../core/executor/mod.mjs';
 import { createRuntimeManager } from '../../core/runtime/mod.mjs';
 import { createSecureStorage } from '../../core/secrets/mod.mjs';
+import { createConfig } from '../../core/config/mod.mjs';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -109,7 +110,15 @@ export async function cmdServe(args, { root, p, log }) {
   if (recovery.resolved) log.info(`startup recovery resolved ${recovery.resolved} interrupted task(s)`);
 
   const listenSpec = findListenSpec(args);
-  if (listenSpec) return runListenMode({ server, stack, listenSpec, args, p, secureStorage, log });
+  if (listenSpec) {
+    // Bounded connection management: portable config, sane defaults.
+    const config = createConfig({ root, p }).load();
+    const limits = {
+      maxConnections: Number(config.server?.maxConnections) > 0 ? Number(config.server.maxConnections) : undefined,
+      idleTimeoutMs: Number(config.server?.idleTimeoutMs) > 0 ? Number(config.server.idleTimeoutMs) : undefined,
+    };
+    return runListenMode({ server, stack, listenSpec, p, secureStorage, log, limits });
+  }
 
   // ---- local stdio mode (unchanged since Phase 2) ----
   const transport = createStreamTransport({
@@ -172,15 +181,15 @@ function parseNodeDescriptor(args) {
  * every accepted connection is handed to the same node server. The process
  * stays alive until the listener is closed or the process is signaled.
  */
-async function runListenMode({ server, stack, listenSpec, p, secureStorage, log }) {
+async function runListenMode({ server, stack, listenSpec, p, secureStorage, log, limits = {} }) {
   const url = parseListenUrl(listenSpec);
   const { certPem, privateKeyPem, fingerprintSha256 } = url.scheme === 'tls'
     ? await loadOrCreateNodeTlsCertificate({ p, secureStorage, log })
     : { certPem: null, privateKeyPem: null, fingerprintSha256: null };
 
   const listener = url.scheme === 'tls'
-    ? await createNetworkNodeListener({ server, certPem, keyPem: privateKeyPem, host: url.host, port: url.port, log })
-    : await createLoopbackNodeListener({ server, host: url.host, port: url.port, log });
+    ? await createNetworkNodeListener({ server, certPem, keyPem: privateKeyPem, host: url.host, port: url.port, log, ...limits })
+    : await createLoopbackNodeListener({ server, host: url.host, port: url.port, log, ...limits });
 
   const addr = listener.address();
   const endpoint = `${url.scheme === 'tls' ? 'https' : 'loopback'}://${addr.address}:${addr.port}`;
@@ -310,13 +319,9 @@ export async function cmdPair(args, { root, p, log }) {
   });
 
   // Print the payload to stdout for a caller to consume; the fingerprints are
-  // safe to show, the private keys never are.
+  // safe to show, the private keys never are. The confirmation log goes to
+  // stderr so a caller parsing stdout gets exactly one JSON document.
   process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
-  log.info('pairing payload minted', {
-    nodeId: payload.nodeId,
-    endpoint: payload.endpoint,
-    expiresAt: payload.expiresAt,
-    certFingerprint: nodeCertSha256 ? nodeCertSha256.slice(0, 16) + '…' : null,
-  });
+  process.stderr.write(`pairing payload minted (nodeId=${payload.nodeId}, endpoint=${payload.endpoint}, expiresAt=${payload.expiresAt}, certFingerprint=${nodeCertSha256 ? nodeCertSha256.slice(0, 16) + '…' : null})\n`);
   return 0;
 }

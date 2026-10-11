@@ -322,8 +322,11 @@ class UhGateEInstrumentedTest {
 
             UhNodeClient.connect(host, endpoint.port, endpoint.certSha256!!).use { reconnected ->
                 reconnected.authenticate(key, deviceId)
+                // Phase 3C: the schema's fresh-client cursor is null (lastEventId has minimum 1);
+                // a literal 0 is rejected as INVALID_MESSAGE. JSONObject.NULL serializes as JSON null
+                // and, unlike Kotlin null, is retained by UhNodeClient.buildEnvelope (required field).
                 val replay = reconnected.requireOk(
-                    reconnected.request("session.replay", mapOf("lastEventId" to 0, "deviceId" to deviceId)),
+                    reconnected.request("session.replay", mapOf("lastEventId" to JSONObject.NULL, "deviceId" to deviceId)),
                     "session.replay",
                 )
                 val events = replay.getJSONArray("events")
@@ -393,26 +396,34 @@ class UhGateEInstrumentedTest {
                 endpoint = startNode()
             }
             val host = endpoint.host.takeIf { it != "0.0.0.0" } ?: (lanAddress() ?: "127.0.0.1")
-            val payload = UhNodeServer.mintPairingPayloadFor(
-                runtime.paths, runtime.prootCommand, UhJsStage(context, runtime.paths), endpoint, host,
-            )
-            // Written to app-private storage; the workstation pulls it over `adb run-as` —
-            // the same out-of-band role an operator's QR scan plays.
-            val json = JSONObject().apply {
-                put("v", payload.v)
-                put("nodeId", payload.nodeId)
-                put("endpoint", payload.endpoint)
-                put("nodeName", payload.nodeName ?: JSONObject.NULL)
-                put("token", payload.token)
-                put("expiresAt", payload.expiresAt)
-                put("nodeIdentitySha256", payload.nodeIdentitySha256)
-                put("nodeCertSha256", payload.nodeCertSha256)
-                put("nodePublicKeyPem", payload.nodePublicKeyPem ?: JSONObject.NULL)
+            // Phase 3C: the controller gate needs one payload per controller
+            // identity (tokens are single-use). -e uhPayloadCount 2 mints two.
+            val payloadCount = (args.getString("uhPayloadCount", "1").toIntOrNull() ?: 1).coerceIn(1, 4)
+            val minted = mutableListOf<org.json.JSONObject>()
+            for (i in 0 until payloadCount) {
+                val payload = UhNodeServer.mintPairingPayloadFor(
+                    runtime.paths, runtime.prootCommand, UhJsStage(context, runtime.paths), endpoint, host,
+                )
+                // Written to app-private storage; the workstation pulls it over `adb run-as` —
+                // the same out-of-band role an operator's QR scan plays.
+                val json = JSONObject().apply {
+                    put("v", payload.v)
+                    put("nodeId", payload.nodeId)
+                    put("endpoint", payload.endpoint)
+                    put("nodeName", payload.nodeName ?: JSONObject.NULL)
+                    put("token", payload.token)
+                    put("expiresAt", payload.expiresAt)
+                    put("nodeIdentitySha256", payload.nodeIdentitySha256)
+                    put("nodeCertSha256", payload.nodeCertSha256)
+                    put("nodePublicKeyPem", payload.nodePublicKeyPem ?: JSONObject.NULL)
+                }
+                val name = if (payloadCount == 1) "pairing-payload-host.json" else "pairing-payload-host-${i + 1}.json"
+                val file = File(stateDir, name)
+                file.writeText(json.toString(2) + System.lineSeparator())
+                minted.add(json)
+                evidence("mint: $name written for the workstation (endpoint=${payload.endpoint} token expires ${payload.expiresAt})")
+                assertTrue("the payload file must exist for the run-as pull", file.isFile)
             }
-            val file = File(stateDir, "pairing-payload-host.json")
-            file.writeText(json.toString(2) + System.lineSeparator())
-            evidence("mint: payload written for the workstation (endpoint=${payload.endpoint} token expires ${payload.expiresAt})")
-            assertTrue("the payload file must exist for the run-as pull", file.isFile)
 
             // `am instrument` force-stops the app when it returns, killing the guest node with
             // it. With -e uhHoldSeconds N the test holds the process open so the workstation can

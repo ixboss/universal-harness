@@ -92,11 +92,28 @@
       "additionalProperties": false,
       "properties": {
         "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
-        "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId", "description": "Omit to create a new session; supply to resume." },
+        "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId", "description": "Omit to create a new session; supply to continue an existing one. A sessionId the node has not seen is adopted into the session index (registered with this project) so Project → Session → Task stays unambiguous." },
         "prompt": { "type": "string" },
         "provider": { "type": ["string", "null"], "description": "Provider profile name; null = node default." },
         "model": { "type": ["string", "null"] },
-        "priority": { "enum": ["background", "normal", "urgent"], "default": "normal" }
+        "priority": { "enum": ["background", "normal", "urgent"], "default": "normal" },
+        "clientRequestId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{8,64}$",
+          "description": "Optional idempotency key. The same authenticated device re-sending the same semantic request with the same clientRequestId receives the SAME task, never a duplicate. The same id with a materially different request is rejected with CONFLICT. Idempotency records live in the durable task store and are retained for the node's event-log retention window."
+        }
+      }
+    },
+    "TaskStartResponse": {
+      "type": "object",
+      "description": "Task accepted. state is the task's actual state when the reply is written ('queued' for a fresh task; the current state for an idempotent replay).",
+      "required": ["taskId", "sessionId", "state"],
+      "additionalProperties": false,
+      "properties": {
+        "taskId": { "$ref": "identifiers.schema.json#/$defs/TaskId" },
+        "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId" },
+        "state": { "type": "string" },
+        "idempotentReplay": { "type": "boolean", "description": "true when this reply returns an existing task created by an earlier identical request with the same clientRequestId." }
       }
     },
     "TaskApproval": {
@@ -152,11 +169,25 @@
     },
     "TaskHistoryRequest": {
       "type": "object",
-      "description": "Returns the node-owned durable event timeline for one task.",
+      "description": "Returns the node-owned durable event timeline for one task, cursor-paginated in eventId order. Deterministic: pages never overlap and never skip; an unknown task is TASK_NOT_FOUND.",
       "required": ["taskId"],
       "additionalProperties": false,
       "properties": {
-        "taskId": { "$ref": "identifiers.schema.json#/$defs/TaskId" }
+        "taskId": { "$ref": "identifiers.schema.json#/$defs/TaskId" },
+        "cursor": { "type": "integer", "minimum": 0, "default": 0, "description": "Last eventId the caller has already seen for this task; 0 starts from the beginning of the task's history." },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 200, "description": "Maximum events returned per page." }
+      }
+    },
+    "TaskHistoryResponse": {
+      "type": "object",
+      "required": ["taskId", "events", "nextCursor", "truncated"],
+      "additionalProperties": false,
+      "properties": {
+        "taskId": { "$ref": "identifiers.schema.json#/$defs/TaskId" },
+        "events": { "type": "array", "items": { "description": "Durable event envelopes for this task, in strictly increasing eventId order." } },
+        "nextCursor": { "type": ["integer", "null"], "description": "Pass as cursor to fetch the next page; null when end-of-history was reached (truncated=false)." },
+        "truncated": { "type": "boolean", "description": "true when more events exist beyond this page (end-of-history is truncated=false with no further events after nextCursor)." },
+        "staleCursor": { "type": "boolean", "description": "true when the requested cursor precedes the node's retained event window; the page starts at the earliest retained event for this task and the response is partial." }
       }
     },
     "FileWriteRequest": {
@@ -375,48 +406,101 @@
       "properties": {
         "sessions": {
           "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["sessionId"],
-            "additionalProperties": false,
-            "properties": {
-              "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId" },
-              "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
-              "createdAt": { "type": "string", "format": "date-time" },
-              "updatedAt": { "type": "string", "format": "date-time" }
-            }
-          }
+          "items": { "$ref": "#/$defs/SessionView" }
         }
+      }
+    },
+    "SessionView": {
+      "type": "object",
+      "description": "Universal Harness session metadata (the orchestration record; never conversation content). dshAvailable reports whether the underlying dsh conversation store currently holds a session under this id.",
+      "required": ["sessionId", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId" },
+        "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
+        "label": { "type": ["string", "null"] },
+        "status": { "type": "string", "description": "'open' or a terminal marker; the node owns this lifecycle." },
+        "priorSessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "dshAvailable": { "type": "boolean", "description": "true when the node's dsh session store holds a conversation with this id." }
       }
     },
     "SessionCreateRequest": {
       "type": "object",
-      "description": "Creates a harness session for a project. Supply sessionId to reopen an existing session.",
+      "description": "Creates a harness session for a project. This registers Universal Harness orchestration metadata only; the dsh conversation itself is created by dsh when the first task runs against the session.",
       "required": ["projectId"],
       "additionalProperties": false,
       "properties": {
         "projectId": { "$ref": "identifiers.schema.json#/$defs/ProjectId" },
-        "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId" }
+        "label": { "type": ["string", "null"], "maxLength": 128 }
+      }
+    },
+    "SessionCreateResponse": {
+      "type": "object",
+      "required": ["session"],
+      "additionalProperties": false,
+      "properties": {
+        "session": { "$ref": "#/$defs/SessionView" }
       }
     },
     "SessionReadRequest": {
       "type": "object",
-      "description": "Reads the durable harness session transcript through the node. This is the conversation-content authority (event class 2); task state comes from the node event store instead.",
+      "description": "Reads one session: Universal Harness metadata, plus — clearly separated — what the node can actually read from the dsh conversation store (summary metadata, and optionally a bounded transcript page). The node never invents dsh data; when dsh has no conversation under this id, dsh.available is false and nothing is fabricated.",
       "required": ["sessionId"],
       "additionalProperties": false,
       "properties": {
         "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId" },
-        "limit": { "type": "integer", "minimum": 1, "maximum": 1000 },
-        "cursor": { "type": ["string", "null"], "description": "Opaque continuation cursor from a previous page." }
+        "includeTranscript": { "type": "boolean", "default": false, "description": "Include one page of the dsh conversation log (requires dsh.available)." },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 200, "default": 100, "description": "Transcript page size when includeTranscript is true." },
+        "cursor": { "type": ["string", "null"], "description": "Transcript continuation cursor (the previous page's nextTranscriptCursor); null starts from the beginning." }
+      }
+    },
+    "SessionReadResponse": {
+      "type": "object",
+      "required": ["session", "dsh"],
+      "additionalProperties": false,
+      "properties": {
+        "session": { "$ref": "#/$defs/SessionView" },
+        "dsh": { "$ref": "#/$defs/DshSessionInfo" },
+        "transcript": { "type": "array", "items": { "description": "Raw dsh conversation log lines (JSONL entries as stored by dsh), in seq order." } },
+        "nextTranscriptCursor": { "type": ["string", "null"], "description": "Pass as cursor to read the next transcript page; null when no more pages are known." }
+      }
+    },
+    "DshSessionInfo": {
+      "type": "object",
+      "description": "What Universal Harness can truthfully report about the dsh-owned conversation. Universal Harness reads this store; it never writes it.",
+      "required": ["available"],
+      "additionalProperties": false,
+      "properties": {
+        "available": { "type": "boolean", "description": "false when dsh has no conversation under this session id (e.g. created but no task has run yet); no other field is meaningful then." },
+        "createdAt": { "type": ["string", "null"], "format": "date-time" },
+        "formatVersion": { "type": ["integer", "null"] },
+        "eventCount": { "type": ["integer", "null"], "minimum": 0 },
+        "lastSeq": { "type": ["integer", "null"] },
+        "turnCount": { "type": ["integer", "null"], "minimum": 0 },
+        "incomplete": { "type": ["boolean", "null"], "description": "true when dsh's last turn never reached turn/end (process died mid-turn)." },
+        "modifiedAt": { "type": ["string", "null"], "format": "date-time" }
       }
     },
     "SessionResumeRequest": {
       "type": "object",
-      "description": "Marks a session as resumed by a client; the node tracks readership, it does not reopen the harness-internal turn.",
+      "description": "Linked continuation. Universal Harness CANNOT reopen a persisted dsh conversation in place (the dsh SDK seam creates sessions; it does not reopen stored ones), so resume creates a NEW session whose priorSessionId links back to the requested one. The dsh conversation is NOT reopened and no conversation content is copied; the lineage metadata is the continuation. Task work submitted against the new session runs in a fresh dsh conversation under the new id.",
       "required": ["sessionId"],
       "additionalProperties": false,
       "properties": {
-        "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId" }
+        "sessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId" },
+        "label": { "type": ["string", "null"], "maxLength": 128 }
+      }
+    },
+    "SessionResumeResponse": {
+      "type": "object",
+      "description": "The new continuation session. resumedFromSessionId makes the lineage explicit on the wire.",
+      "required": ["session", "resumedFromSessionId"],
+      "additionalProperties": false,
+      "properties": {
+        "session": { "$ref": "#/$defs/SessionView" },
+        "resumedFromSessionId": { "$ref": "identifiers.schema.json#/$defs/SessionId" }
       }
     },
     "UpdateApplyRequest": {

@@ -177,7 +177,7 @@ test('net: a wrong pairing token is rejected and never authorizes', async () => 
       deviceName: 'attacker',
       platform: 'desktop',
       devicePublicKeyPem: device.publicKeyPem,
-      pairingToken: 'definitely-not-the-token',
+      pairingToken: 'not-the-token',
       expectedNodeIdentitySha256: pairing.nodeIdentitySha256,
       requestedScopes: ['task-control'],
       sigB64: device.sign(hello.payload.challengeB64),
@@ -616,7 +616,7 @@ test('net: a running task survives controller disconnect and replays after recon
     const reconnected = await client.reconnect();
     try {
       const replay = await reconnected.wire.request('session.replay', {
-        lastEventId: 0, deviceId: client.deviceId,
+        lastEventId: null, deviceId: client.deviceId,
       }, 'req_replay_1', WAIT);
       assert.equal(replay.ok, true, JSON.stringify(replay.payload));
       const kinds = replay.payload.events.map((e) => e.payload?.kind ?? e.kind);

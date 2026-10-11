@@ -199,12 +199,39 @@ export function createSessionStore({ dshHome, log = consoleShim() }) {
     return readSessionLog(found.logFile).filter((e) => e?.type !== 'session');
   }
 
+  /**
+   * Cheap membership check: does the dsh store hold any session log for this
+   * id? Directory walk only — no log parsing — so protocol read paths can
+   * report dshAvailable without paying for a full scan.
+   */
+  function has(id) {
+    if (!fs.existsSync(sessionsDir)) return false;
+    const wanted = String(id);
+    for (const wsDir of fs.readdirSync(sessionsDir, { withFileTypes: true })) {
+      if (!wsDir.isDirectory()) continue;
+      const sPath = path.join(sessionsDir, wsDir.name, wanted);
+      if (!fs.existsSync(sPath) || !fs.statSync(sPath).isDirectory()) continue;
+      for (const name of fs.readdirSync(sPath)) {
+        if (/^session\..*\.jsonl(\.zstd)?$/.test(name)) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Full summary for one session id, or null when the store holds none. This is
+   * what a protocol session.read maps into DshSessionInfo — metadata only.
+   */
+  function get(id) {
+    return list().find((s) => s.id === String(id)) || null;
+  }
+
   /** Find sessions whose workspace cwd is (or is under) a UH workspace root. */
   function forWorkspace(root) {
     return list().filter((s) => pathEqualsOrUnder(s.cwd, root));
   }
 
-  return { list, replay, forWorkspace, sessionLogFiles, sessionsDir };
+  return { list, replay, has, get, forWorkspace, sessionLogFiles, sessionsDir };
 }
 
 function pathsEqual(a, b) {
@@ -259,7 +286,7 @@ export function createSessionIndex({ p }) {
   /**
    * Record a session (creating or updating by dsh session id).
    *
-   * @param {Object} entry { id, workspaceId?, priorSessionId?, label?, status? }
+   * @param {Object} entry { id, workspaceId?, projectId?, priorSessionId?, label?, status? }
    */
   function record(entry) {
     const index = load();
@@ -270,6 +297,9 @@ export function createSessionIndex({ p }) {
     }
     Object.assign(rec, {
       workspaceId: entry.workspaceId ?? rec.workspaceId ?? null,
+      // Phase 3C: the protocol surface addresses projects by projectId
+      // (proj_<hex>); recorded alongside the legacy workspaceId when present.
+      projectId: entry.projectId ?? rec.projectId ?? null,
       priorSessionId: entry.priorSessionId ?? rec.priorSessionId ?? null,
       label: entry.label ?? rec.label ?? null,
       status: entry.status ?? rec.status ?? 'open',

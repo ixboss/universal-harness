@@ -122,7 +122,11 @@ export class Validator {
         if (node.format === 'hex64' && !/^[0-9a-f]{64}$/.test(value)) return fail(path, 'not 64 lowercase hex chars');
         break;
       }
-      case 'integer': {
+      case 'integer':
+      case 'number': {
+        // actualType() reports 'number' for every numeric value, so numeric
+        // bounds must be checked under both labels (a `type: "integer"`
+        // schema already passed the Number.isInteger type check above).
         if (node.minimum !== undefined && value < node.minimum) return fail(path, `less than minimum ${node.minimum}`);
         if (node.maximum !== undefined && value > node.maximum) return fail(path, `greater than maximum ${node.maximum}`);
         break;

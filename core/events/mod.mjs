@@ -167,6 +167,32 @@ export function createEventStore({ p, log = null, maxEvents = 200_000 }) {
     return { events, truncated, nextCursor, unavailable, head };
   }
 
+  /**
+   * Task-scoped replay: the durable event timeline of ONE task, cursor-paginated
+   * in eventId order. Deterministic — pages never overlap (an event with id
+   * <= cursor is never returned again) and never skip (records are scanned in
+   * id order, which is the commit order). `staleCursor` reports honestly when
+   * the requested cursor precedes the retained window so the page is partial.
+   *
+   * @param {string} taskId
+   * @param {{cursor?: number, limit?: number}} [opts]
+   * @returns {{events: object[], nextCursor: number|null, truncated: boolean, staleCursor: boolean, head: number}}
+   */
+  function replayTaskEvents(taskId, { cursor = 0, limit = 200 } = {}) {
+    const events = [];
+    let truncated = false;
+    const earliestSeen = records.length ? records[0].id : null;
+    for (const record of records) {
+      if (record.event?.taskId !== taskId) continue;
+      if (record.id <= cursor) continue;
+      if (events.length >= limit) { truncated = true; break; }
+      events.push(toEnvelope(record));
+    }
+    const nextCursor = truncated ? (events.length ? events[events.length - 1].eventId : cursor) : null;
+    const staleCursor = Number.isInteger(cursor) && cursor > 0 && (earliestSeen === null || cursor < earliestSeen);
+    return { events, nextCursor, truncated, staleCursor, head };
+  }
+
   function toEnvelope(record) {
     return {
       protocolVersion: 1,
@@ -252,6 +278,7 @@ export function createEventStore({ p, log = null, maxEvents = 200_000 }) {
   return {
     append,
     replay,
+    replayTaskEvents,
     snapshot,
     compact,
     rebuild,

@@ -15,17 +15,20 @@
 // Layering is strict: transport -> server dispatch -> auth/scopes -> task
 // engine -> executor -> dsh adapter. No layer reaches across another.
 
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import {
   PROTOCOL_VERSION, SUPPORTED_VERSION_RANGE, KINDS, PERR, PAIR_FAIL,
   now, responseEnvelope, eventEnvelope,
   notificationEnvelope, errorEnvelope, validateEnvelope, validatePayload,
-  buildCapabilities, ADVERTISED_OPERATIONS, isDurable,
+  buildCapabilities, ADVERTISED_OPERATIONS, isDurable, sha256Hex,
 } from '../protocol/mod.mjs';
 import { authorize, UNAUTHENTICATED_OPERATIONS } from '../scopes/mod.mjs';
 import { checkTransition, TERMINAL_STATES, recoveryTarget } from '../tasks/mod.mjs';
 import { handleTerminalRequest } from '../terminal/mod.mjs';
+import { createSessionIndex, createSessionStore } from '../sessions/mod.mjs';
+import { runNodeDiagnostics } from '../diagnostics/mod.mjs';
 
 const TERMINAL_KINDS_SET = new Set(['terminal.exec', 'terminal.cancel']);
 
@@ -58,11 +61,35 @@ export function createNodeServer({
   const liveTasks = new Map();
   // Subscribers for the live event fan-out: every authenticated connection.
   const subscribers = new Set();
+  // Universal Harness session index (orchestration metadata; dsh owns the
+  // conversations). Created lazily on the node's portable paths so every
+  // constructor shape shares the same data/sessions/index.json.
+  const sessionIndex = sessions || createSessionIndex({ p });
+  // The dsh-owned conversation store, read-only, for session.read/dshAvailable.
+  const dshSessions = createSessionStore({
+    dshHome: process.env.DSH_HOME || path.join(os.homedir(), '.dsh'),
+    log: log || { info() {}, warn() {}, debug() {}, error() {} },
+  });
+  // Idempotency index for task.start: `${deviceId}:${clientRequestId}` ->
+  // { taskId, requestHash }. Derived from the durable task records, so it
+  // survives restarts for as long as the event log retains the creating
+  // record (the repository's durability model — no second idempotency store).
+  const idempotency = new Map();
 
   let connectionSeq = 0;
 
   function info(msg) { log?.info?.(`[node] ${msg}`); }
   function warn(msg) { log?.warn?.(`[node] ${msg}`); }
+
+  // Rebuild the idempotency index from the durable log. Only the LAST record of
+  // each task survives in the task index, which is exactly the record that
+  // carries the creation-time clientRequestId for a task that was started with
+  // one — creation fields are never mutated by later transitions.
+  for (const t of events.tasksSnapshot()) {
+    if (t.clientRequestId && t.createdBy) {
+      idempotency.set(`${t.createdBy}:${t.clientRequestId}`, { taskId: t.taskId, requestHash: t.requestHash });
+    }
+  }
 
   // --------------------------------------------------------------- capabilities
   function capabilities() {
@@ -137,8 +164,26 @@ export function createNodeServer({
   /**
    * Start a task. Returns immediately with the taskId, per PROTOCOL §6: the
    * lifecycle arrives as events. The task runs detached from any connection.
+   *
+   * Idempotency (Phase 3C): with a clientRequestId, the same device re-sending
+   * the same semantic request gets the SAME task back (idempotentReplay), and
+   * the same id with a different request is a CONFLICT. The mapping lives in
+   * the durable task record, so it survives restarts for the event log's
+   * retention window — there is no second idempotency store.
    */
-  function startTask({ projectId, sessionId = null, prompt, priority = 'normal' }, connection) {
+  function startTask({ projectId, sessionId = null, prompt, priority = 'normal', clientRequestId = null, createdBy = null, requestHash = null }, connection) {
+    if (clientRequestId) {
+      const key = `${createdBy}:${clientRequestId}`;
+      const seen = idempotency.get(key);
+      if (seen) {
+        if (seen.requestHash === requestHash) {
+          const record = events.taskRecord(seen.taskId);
+          return { ok: true, taskId: seen.taskId, sessionId: record?.sessionId || null, idempotentReplay: true, state: record?.state || 'queued' };
+        }
+        return { ok: false, code: 'CONFLICT', reason: `clientRequestId "${clientRequestId}" was already used by this device with a different request` };
+      }
+    }
+
     const task = {
       taskId: newId('task'),
       projectId,
@@ -149,6 +194,8 @@ export function createNodeServer({
       lastEventId: 0,
       prompt: prompt || '',
       priority,
+      createdBy: createdBy || null,
+      ...(clientRequestId ? { clientRequestId, requestHash } : {}),
     };
 
     const record = events.tasksSnapshot().find((t) => t.taskId === task.taskId);
@@ -156,11 +203,22 @@ export function createNodeServer({
       return { ok: false, code: 'CONFLICT', reason: 'task id collision; retry the request' };
     }
 
+    // Project -> Session -> Task must stay unambiguous: a session a task
+    // references becomes a first-class session index entry (adopted with this
+    // project) even when the client supplied an id the node had not minted.
+    // A durable session.created event is emitted only by the explicit
+    // session.create / session.resume operations.
+    sessionIndex.record({ id: task.sessionId, projectId: projectId || null, status: 'open' });
+
     // created -> queued is the first durable transition; the task record is
     // established durably before any executor is spawned.
     const queued = transition(task, 'queued', { eventKind: 'task.queued' });
     if (!queued.ok) {
       return { ok: false, code: queued.code, reason: queued.reason };
+    }
+
+    if (clientRequestId) {
+      idempotency.set(`${createdBy}:${clientRequestId}`, { taskId: task.taskId, requestHash });
     }
 
     runTask(task, connection).catch((e) => failTask(task, e));
@@ -321,6 +379,128 @@ export function createNodeServer({
     try { await live.handle.cancel({ timeoutMs: 8000 }); } catch (e) { warn(`task ${taskId}: executor cancel failed: ${e?.message || e}`); }
     try { live.handle.close(); } catch { /* already closed */ }
     return { ok: true, taskId, state: 'cancelling' };
+  }
+
+  // ------------------------------------------------------------ session ops (3C)
+  // Universal Harness owns the session INDEX (orchestration metadata: project
+  // association, labels, lineage). dsh owns the conversations; this node only
+  // READS that store to report dshAvailable and, on request, a bounded
+  // transcript page. session.resume never reopens a dsh conversation — it
+  // mints a continuation session linked through priorSessionId (R-20), and the
+  // response says so on the wire.
+  const PROTOCOL_SESSION_ID = /^sess_[0-9a-f]{32}$/;
+  const MAX_TRANSCRIPT_BYTES = 512 * 1024;
+
+  function isoOrNull(ms) {
+    return typeof ms === 'number' && Number.isFinite(ms) ? new Date(ms).toISOString() : (ms ?? undefined);
+  }
+
+  function sessionView(entry) {
+    return {
+      sessionId: entry.id,
+      projectId: entry.projectId || undefined,
+      label: entry.label ?? undefined,
+      status: entry.status || 'open',
+      priorSessionId: entry.priorSessionId || undefined,
+      createdAt: isoOrNull(entry.createdAt),
+      updatedAt: isoOrNull(entry.updatedAt),
+      dshAvailable: dshSessions.has(entry.id),
+    };
+  }
+
+  function emitSessionCreated({ sessionId, projectId, priorSessionId = null, label = null }) {
+    const event = {
+      kind: 'session.created',
+      sessionId,
+      ...(projectId ? { projectId } : {}),
+      ...(priorSessionId ? { priorSessionId } : {}),
+      ...(label ? { label } : {}),
+      state: 'open',
+    };
+    const committed = events.append({ event, task: null });
+    broadcast(eventEnvelope(event.kind, { ...event }, committed.id));
+    return committed.id;
+  }
+
+  function sessionList(payload) {
+    let entries = sessionIndex.list().filter((e) => PROTOCOL_SESSION_ID.test(e.id));
+    if (payload.projectId) entries = entries.filter((e) => e.projectId === payload.projectId);
+    return { sessions: entries.map(sessionView) };
+  }
+
+  function sessionCreate(payload) {
+    const known = workspace.listProjects().some((pr) => pr.projectId === payload.projectId);
+    if (!known) {
+      return { ok: false, code: PERR.NOT_FOUND, reason: `no such project: ${payload.projectId}` };
+    }
+    const sessionId = newId('sess');
+    sessionIndex.record({ id: sessionId, projectId: payload.projectId, label: payload.label || null, status: 'open' });
+    emitSessionCreated({ sessionId, projectId: payload.projectId, label: payload.label || null });
+    return { ok: true, session: sessionView(sessionIndex.get(sessionId)) };
+  }
+
+  function sessionRead(payload) {
+    const entry = sessionIndex.get(payload.sessionId);
+    if (!entry) {
+      return { ok: false, code: PERR.NOT_FOUND, reason: `no such session: ${payload.sessionId}` };
+    }
+    const dshEntry = dshSessions.get(payload.sessionId);
+    const dsh = dshEntry
+      ? {
+        available: true,
+        createdAt: dshEntry.createdAt ?? null,
+        formatVersion: dshEntry.formatVersion ?? null,
+        eventCount: dshEntry.eventCount ?? null,
+        lastSeq: dshEntry.lastSeq ?? null,
+        turnCount: dshEntry.turnCount ?? null,
+        incomplete: dshEntry.incomplete ?? null,
+        modifiedAt: isoOrNull(dshEntry.modifiedAt) ?? null,
+      }
+      : { available: false };
+    const result = { session: sessionView(entry), dsh };
+    if (payload.includeTranscript) {
+      result.transcript = [];
+      result.nextTranscriptCursor = null;
+      if (dshEntry) {
+        // Transcript paging is by dsh's own monotonic seq. The node serves
+        // what dsh actually stored — nothing is synthesized — and bounds the
+        // page so a response can never exceed the frame limit.
+        const cursorInt = payload.cursor ? Number.parseInt(payload.cursor, 10) : 0;
+        if (!Number.isFinite(cursorInt) || cursorInt < 0) {
+          return { ok: false, code: PERR.INVALID_MESSAGE, reason: 'transcript cursor must be a non-negative integer string' };
+        }
+        let bytes = 0;
+        let lastSeq = null;
+        for (const line of dshSessions.replay(payload.sessionId)) {
+          const seq = typeof line?.seq === 'number' ? line.seq : 0;
+          if (seq <= cursorInt) continue;
+          const encoded = JSON.stringify(line);
+          if (bytes + encoded.length > MAX_TRANSCRIPT_BYTES) break;
+          result.transcript.push(line);
+          bytes += encoded.length;
+          lastSeq = seq;
+        }
+        result.nextTranscriptCursor = lastSeq === null ? null : String(lastSeq);
+      }
+    }
+    return { ok: true, ...result };
+  }
+
+  function sessionResume(payload) {
+    const prior = sessionIndex.get(payload.sessionId);
+    if (!prior) {
+      return { ok: false, code: PERR.NOT_FOUND, reason: `no such session: ${payload.sessionId}` };
+    }
+    const sessionId = newId('sess');
+    sessionIndex.record({
+      id: sessionId,
+      projectId: prior.projectId ?? null,
+      label: payload.label || null,
+      priorSessionId: prior.id,
+      status: 'open',
+    });
+    emitSessionCreated({ sessionId, projectId: prior.projectId ?? null, priorSessionId: prior.id, label: payload.label || null });
+    return { ok: true, session: sessionView(sessionIndex.get(sessionId)), resumedFromSessionId: prior.id };
   }
 
   // ------------------------------------------------------------- recovery (§15)
@@ -624,18 +804,79 @@ export function createNodeServer({
         return;
       }
 
+      case KINDS.SESSION_LIST: {
+        send(transport, responseEnvelope(requestId, KINDS.SESSION_LIST, sessionList(payload)));
+        return;
+      }
+
+      case KINDS.SESSION_CREATE: {
+        const created = sessionCreate(payload);
+        if (!created.ok) {
+          send(transport, errorEnvelope(requestId, created.code, created.reason));
+          return;
+        }
+        send(transport, responseEnvelope(requestId, KINDS.SESSION_CREATE, { session: created.session }));
+        return;
+      }
+
+      case KINDS.SESSION_READ: {
+        const read = sessionRead(payload);
+        if (!read.ok) {
+          send(transport, errorEnvelope(requestId, read.code, read.reason));
+          return;
+        }
+        send(transport, responseEnvelope(requestId, KINDS.SESSION_READ, {
+          session: read.session, dsh: read.dsh,
+          ...(read.transcript ? { transcript: read.transcript, nextTranscriptCursor: read.nextTranscriptCursor } : {}),
+        }));
+        return;
+      }
+
+      case KINDS.SESSION_RESUME: {
+        const resumed = sessionResume(payload);
+        if (!resumed.ok) {
+          send(transport, errorEnvelope(requestId, resumed.code, resumed.reason));
+          return;
+        }
+        send(transport, responseEnvelope(requestId, KINDS.SESSION_RESUME, {
+          session: resumed.session, resumedFromSessionId: resumed.resumedFromSessionId,
+        }));
+        return;
+      }
+
       case KINDS.TASK_START: {
+        // The idempotency hash covers the semantic request, not the envelope:
+        // a retry that arrives on a new connection with a new requestId still
+        // collides correctly, and a genuinely different prompt does not.
+        const requestHash = payload.clientRequestId
+          ? sha256Hex({
+            projectId: payload.projectId ?? null,
+            sessionId: payload.sessionId ?? null,
+            prompt: payload.prompt ?? '',
+            priority: payload.priority ?? 'normal',
+            provider: payload.provider ?? null,
+            model: payload.model ?? null,
+          })
+          : null;
         const started = startTask({
           projectId: payload.projectId,
           sessionId: payload.sessionId,
           prompt: payload.prompt,
           priority: payload.priority,
+          clientRequestId: payload.clientRequestId || null,
+          createdBy: state.deviceId,
+          requestHash,
         }, state);
         if (!started.ok) {
           send(transport, errorEnvelope(requestId, started.code, started.reason));
           return;
         }
-        send(transport, responseEnvelope(requestId, KINDS.TASK_START, { taskId: started.taskId, sessionId: started.sessionId, state: 'queued' }));
+        send(transport, responseEnvelope(requestId, KINDS.TASK_START, {
+          taskId: started.taskId,
+          sessionId: started.sessionId,
+          state: started.state || 'queued',
+          ...(started.idempotentReplay ? { idempotentReplay: true } : {}),
+        }));
         return;
       }
 
@@ -652,15 +893,28 @@ export function createNodeServer({
       case KINDS.TASK_LIST: {
         const tasks = events.tasksSnapshot().map((t) => ({
           taskId: t.taskId, state: t.state, sessionId: t.sessionId || undefined, projectId: t.projectId,
+          createdAt: t.createdAt, updatedAt: t.updatedAt,
         }));
         send(transport, responseEnvelope(requestId, KINDS.TASK_LIST, { tasks }));
         return;
       }
 
       case KINDS.TASK_HISTORY: {
-        const replay = events.replay(0, { limit: 1000 });
-        const filtered = replay.events.filter((e) => e.payload?.taskId === payload.taskId);
-        send(transport, responseEnvelope(requestId, KINDS.TASK_HISTORY, { taskId: payload.taskId, events: filtered }));
+        // Cursor-paginated (Phase 3C): deterministic pages in eventId order,
+        // bounded size, explicit end-of-history, TASK_NOT_FOUND for unknown
+        // tasks — the old first-1000-events scan is gone.
+        if (!events.taskRecord(payload.taskId)) {
+          send(transport, errorEnvelope(requestId, PERR.TASK_NOT_FOUND, `no such task: ${payload.taskId}`));
+          return;
+        }
+        const page = events.replayTaskEvents(payload.taskId, { cursor: payload.cursor ?? 0, limit: payload.limit ?? 200 });
+        send(transport, responseEnvelope(requestId, KINDS.TASK_HISTORY, {
+          taskId: payload.taskId,
+          events: page.events,
+          nextCursor: page.nextCursor,
+          truncated: page.truncated,
+          staleCursor: page.staleCursor,
+        }));
         return;
       }
 
@@ -721,7 +975,24 @@ export function createNodeServer({
       }
 
       case KINDS.DIAGNOSTICS_RUN: {
-        send(transport, responseEnvelope(requestId, KINDS.DIAGNOSTICS_RUN, { checks: [] }));
+        // Reuses the doctor's building blocks (redaction included) without the
+        // live dsh process check, which stays CLI-only so a diagnostics request
+        // can never collide with running tasks.
+        const result = await runNodeDiagnostics({
+          root, p, identity, auth, events, runtimeManager, log,
+          server: {
+            describe: () => ({
+              nodeId: identity.nodeId,
+              connections: connections.size,
+              liveTasks: liveTasks.size,
+              subscribers: subscribers.size,
+              eventHead: events.getHead(),
+            }),
+          },
+        });
+        const requested = Array.isArray(payload.checks) && payload.checks.length ? new Set(payload.checks) : null;
+        const checks = requested ? result.checks.filter((c) => requested.has(c.id)) : result.checks;
+        send(transport, responseEnvelope(requestId, KINDS.DIAGNOSTICS_RUN, { checks }));
         return;
       }
 

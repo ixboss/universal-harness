@@ -57,10 +57,15 @@ test('server: node.hello advertises the version range and exactly the served ope
     const { hello } = await openServer(stack);
     assert.deepEqual(hello.payload.protocolVersionRange, [1, 1]);
     const ops = hello.payload.operations;
-    assert.ok(Array.isArray(ops) && ops.length >= 15);
+    assert.ok(Array.isArray(ops) && ops.length >= 19);
     assert.ok(ops.includes('task.start'));
     assert.ok(ops.includes('session.replay'));
-    for (const absent of ['session.list', 'session.create', 'session.read', 'session.resume', 'task.approve']) {
+    // Phase 3C: the session operations are served now; task.approve and the
+    // terminal/update ops stay unimplemented and must remain unadvertised.
+    for (const present of ['session.list', 'session.create', 'session.read', 'session.resume']) {
+      assert.ok(ops.includes(present), `"${present}" is implemented and must be advertised`);
+    }
+    for (const absent of ['task.approve', 'terminal.exec', 'update.check']) {
       assert.ok(!ops.includes(absent), `"${absent}" is not implemented and must not be advertised`);
     }
   });
@@ -96,11 +101,16 @@ test('server: malformed payloads are rejected before any handler runs', async ()
 test('server: an unknown or unimplemented operation answers CAPABILITY_UNSUPPORTED, never SCOPE_DENIED', async () => {
   await withStack(async (stack) => {
     const session = await buildPairedSession(stack);
-    for (const kind of ['session.create', 'task.approve', 'something.entirely.new']) {
-      const r = await session.wire.request(kind, kind === 'session.create' ? { projectId: `proj_${'a'.repeat(32)}` } : {}, `req_cap_${['session.create','task.approve','something.entirely.new'].indexOf(kind)}`);
+    // session.create is served since Phase 3C; its unknown project answers
+    // NOT_FOUND from the handler, not CAPABILITY_UNSUPPORTED from the gate.
+    for (const kind of ['task.approve', 'something.entirely.new']) {
+      const r = await session.wire.request(kind, {}, `req_cap_${kind.replace(/\./g, '_')}`);
       assert.equal(r.ok, false, kind);
       assert.equal(r.payload.code, 'CAPABILITY_UNSUPPORTED', kind);
     }
+    const unknownProject = await session.wire.request('session.create', { projectId: `proj_${'a'.repeat(32)}` }, 'req_cap_sess');
+    assert.equal(unknownProject.ok, false);
+    assert.equal(unknownProject.payload.code, 'NOT_FOUND');
   });
 });
 

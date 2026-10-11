@@ -141,7 +141,7 @@ const authReply = await w2.request('auth.connect', {
   sigB64: device.sign(hello2.payload.challengeB64),
 }, 'req_auth', { timeoutMs: WAIT });
 check(authReply.ok, 'reconnect: auth.connect authenticates the same deviceId over a fresh TLS connection');
-const replay = await w2.request('session.replay', { lastEventId: 0, deviceId }, 'req_replay', { timeoutMs: WAIT });
+const replay = await w2.request('session.replay', { lastEventId: null, deviceId }, 'req_replay', { timeoutMs: WAIT });
 const kinds = (replay.payload?.events || []).map((e) => e.payload?.kind ?? e.kind);
 const eventIds = (replay.payload?.events || []).map((e) => e.eventId).filter(Number.isInteger);
 check(replay.ok && kinds.includes('task.queued') && kinds.includes('task.started'),

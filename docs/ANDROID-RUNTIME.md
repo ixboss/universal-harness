@@ -1,8 +1,22 @@
-# Android Runtime — Phase 3A foundation
+# Android Runtime — Phase 3A/3B/3C foundation
+
+Phase 3A delivered the runtime foundation described below. Phase 3B (commit `4a53cec`) added the
+node's network surface — the same JS core serving Universal Protocol v1 over a TLS listener with
+ALPN framing (`uh-ndjson` stream + one-shot HTTP), staged into the APK via content-addressed
+Merkle staging, supervised by the foreground `NodeServerService`, advertised over NSD
+(`_universal-harness._tcp.`), with controller-side pairing (certificate + identity pinning,
+pure-Kotlin RFC 8032 Ed25519) verified on-device by the Gate E instrumented suite (9/9 on the
+moto g 5G plus) and cross-device over LAN (workstation script 22/22). Phase 3C added the
+session operations, cursor-paginated task history, idempotent task submission, bounded
+connections, and real diagnostics to that same guest node, plus the controller side
+(`core/client` + `uh connect`). The Phase 3C controller gate was executed against a
+**Windows desktop node** (localhost TLS, `tests/manual/gate-f-controller.mjs`, 28/28); it was
+**not** run against the physical Android device in this pass, so no device-side Phase 3C claim
+is made (see [COMPATIBILITY.md](COMPATIBILITY.md)).
 
 What Phase 3A actually implements, how to build it, and what is verified. The honesty rules of
-[this repository](COMPATIBILITY.md) apply: a Gradle build is not a device verification, and
-**R-01 remains unresolved** until the real-device gate below passes.
+[this repository](COMPATIBILITY.md) apply: a Gradle build is not a device verification. **R-01
+is RESOLVED** for the runtime chain (real-device Gate D, 2026-10-01); see the status table below.
 
 ## What Phase 3A delivers
 
@@ -36,7 +50,7 @@ cd android
 export JAVA_HOME="<path to JDK 17>"        # e.g. Android Studio's jbr is too new (Java 25)
 ./gradlew :app:assembleDebug -PmhNdkVersion=28.2.13676358      # debug APKs (online + offline flavors)
 ./gradlew :app:assembleOnlineRelease -PmhNdkVersion=28.2.13676358   # unsigned release APK
-./gradlew :app:testOnlineDebugUnitTest -PmhNdkVersion=28.2.13676358 # JVM unit tests (102)
+./gradlew :app:testOnlineDebugUnitTest -PmhNdkVersion=28.2.13676358 # JVM unit tests (135 per flavor)
 ./gradlew :app:assembleOnlineDebugAndroidTest -PmhNdkVersion=28.2.13676358  # instrumented test APK
 ```
 
@@ -57,7 +71,8 @@ into place only after full extraction, bootstraps guest DNS + CA certificates, i
 exact dsh pin with the guest npm, then runs the in-guest verification (`uname -m`, `node -v`,
 `dsh --version`). Every stage writes its pin into `uh-state/install-state.json` atomically;
 interruption at any point leaves the stage undone and re-runnable. **The real-device execution
-of these stages has not happened yet** — Gate D is blocked on device availability (below).
+of these stages has happened**: Gate D passed on the physical moto g 5G plus (8/8, re-run 8/8
+after an `am force-stop` cold restart) — see the status table below.
 
 ## How to run the ARM64 runtime checks (Gate D)
 
@@ -78,8 +93,8 @@ recording actual output. The JSON-RPC initialize round trip runs through `UhRunt
 
 | Gate | Status | Evidence |
 |---|---|---|
-| A — repository integrity | **Pass** | JS suite 121/121, lint-schemas 0 problems, validate-repo 0 problems; no secrets; dsh untouched |
-| B — Android build | **Pass (host)** | Gradle debug + unsigned release + androidTest APK build; 105/105 JVM unit tests per flavor (incl. the full imported Mobile-Harness suite); arm64-v8a-only native packaging verified by APK inspection |
+| A — repository integrity | **Pass** | JS suite 187/187, lint-schemas 7 files/104 refs/0 problems, validate-repo 0 problems; no secrets; dsh untouched |
+| B — Android build | **Pass (host)** | Gradle debug + unsigned release + androidTest APK build; 135/135 JVM unit tests per flavor, 0 failures (2 Windows-only symlink cases skipped; incl. the full imported Mobile-Harness suite); arm64-v8a-only native packaging verified by APK inspection |
 | C — runtime installation | **Pass (device)** | moto g 5G plus (nairo, Android 11 / API 30, arm64-v8a): staged install completed on-device — pinned Ubuntu 20.04.5 arm64 rootfs extracted, Node v24.21.0 linux-arm64 activated, `apt-get` bootstrap (dpkg under `--link2symlink`), pinned dsh installed with the guest npm into `/usr/local`; install state durable and resumable across runs |
 | D — actual ARM64 execution | **Pass (device)** | Gate D instrumented suite 8/8 on the real device: `uname -m` == `aarch64`, `node -v` == `v24.21.0`, `node -p process.arch` == `arm64`, `dsh --version` == `0.2.0-rc.2`, SDK `initialize` returns `serverInfo`, clean `shutdown` with exit status 0; cold restart after `am force-stop` re-passes 8/8 with reconciliation and no orphaned proot/node/dsh processes |
 | E — provider prompt test | **Externally blocked (provider-side)** | The SDK seam is proven through `initialize` + clean `shutdown`. A real `session/prompt` needs a funded provider credential: the host credential is accepted (`HTTP 200`) but the account reports `is_available: false`, balance `0.00 USD` — unfunded. This is a provider-account limitation (R-21), not an Android runtime defect, and is tracked separately from R-01 |

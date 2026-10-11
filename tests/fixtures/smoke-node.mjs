@@ -99,7 +99,7 @@ async function main() {
   console.log('6. reconnect auth.connect         OK');
 
   // 7. replay from cursor 0
-  client2.send(requestEnvelope('session.replay', { deviceId, lastEventId: 0 }, 'req_replay_001'));
+  client2.send(requestEnvelope('session.replay', { deviceId, lastEventId: null }, 'req_replay_001'));
   const replayResp = await wire2.next((e) => e.type === 'response' && e.requestId === 'req_replay_001');
   const replayed = replayResp.payload;
   const kinds = replayed.events.map((e) => `${e.payload.kind}#${e.eventId}`);

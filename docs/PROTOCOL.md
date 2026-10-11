@@ -146,6 +146,14 @@ Renaming, revocation, forget, re-pair, last-seen, and active connections are ope
 `DeviceRecord`. Revocation is immediate for new connections; a live stream is closed at the
 next event.
 
+**Revocation semantics (Phase 3C, ADR-009 — Option B, owner-gated re-admission).** A revoked
+device cannot authenticate (`DEVICE_REVOKED`) and there is no self-service path back. The
+node's owner CAN deliberately re-admit a revoked device by minting a fresh pairing token and
+completing a new pairing with the same device key: the record is refreshed in place (same
+`deviceId`, never a duplicate), and authentication works again. This is safe exactly because a
+token is an explicit owner act (single-use, 60-second, 192-bit, identity-bound, hash-persisted
+only). `forget: true` removes the record entirely instead.
+
 ## 5. Event durability, crash consistency, and recovery
 
 ### 5.1 Four event classes — the exact relationship
@@ -243,6 +251,45 @@ crash, restart, or an unflushed event.
   node as the recorder of the outcome. Upstream's cancellation "commits neither system nor
   users" (AUDIT §2.3), so the node's record is authoritative; there is no harness-side
   cancellation event to await.
+
+### 6.1 Sessions and linked continuation (Phase 3C)
+
+- **Ownership:** dsh owns conversations (`$DSH_HOME/sessions/...`, immutable headers);
+  Universal Harness owns the session index (project association, labels, status, lineage) and
+  the durable `session.created` event. Universal Harness only ever READS the dsh store.
+- **`session.create`** registers a session for a project. The dsh conversation does not exist
+  until a task runs against the session; until then `dshAvailable` is honestly `false`.
+- **`session.resume` is a linked continuation (R-20, ADR-009):** it creates a NEW session whose
+  `priorSessionId` is the requested session, and the response carries
+  `resumedFromSessionId`. It does NOT reopen the dsh conversation; work submitted against the
+  continuation runs in a fresh dsh conversation under the new id. Universal Harness never
+  rewrites dsh session headers and never synthesizes conversation content.
+- **`session.read`** returns the Universal Harness session view plus — clearly separated — the
+  dsh conversation metadata the node can actually read (`dsh.available`, turn/seq counts,
+  incompleteness). An opt-in bounded transcript page (`includeTranscript`, ≤200 lines, ~512 KiB)
+  serves dsh's own stored lines in seq order; nothing is fabricated when the store holds
+  nothing. dsh session ids created by the local `uh exec` CLI (UUID ids) are a CLI-local
+  feature and are not part of the protocol session surface.
+- **`task.start` + sessions:** the request may carry `sessionId`; an id the node has not seen
+  is adopted into the session index with the task's project, so
+  Project → Session → Task → Events stays unambiguous. Task records expose their `sessionId`
+  through `task.list` and `task.history`.
+- **Idempotent submission:** `task.start` may carry a `clientRequestId`. The same
+  authenticated device re-sending the same semantic request (same project, session, prompt,
+  priority, provider, model) with the same id receives the SAME task
+  (`idempotentReplay: true`) — never a duplicate. The same id with a materially different
+  request is a `CONFLICT`. Idempotency records live in the durable task records and remain
+  valid for the node's event-log retention window; there is no separate idempotency store.
+- **`task.history` pagination:** cursor-based over the task's durable events in eventId order
+  (cursor = last eventId seen, limit ≤ 1000, default 200). Pages never overlap or skip;
+  `truncated: false` with `nextCursor: null` is the explicit end of history; a cursor older
+  than the retained window returns the earliest retained events with `staleCursor: true`;
+  unknown tasks are `TASK_NOT_FOUND`.
+- **Connection limits (node-side, transparent to the protocol):** at most
+  `server.maxConnections` (default 32) sockets; over-cap peers are dropped before the TLS
+  handshake. A stream silent in BOTH directions for `server.idleTimeoutMs` (default 300 s) is
+  reaped like any disconnect — running tasks are unaffected and clients recover via
+  reconnect + `session.replay`.
 
 ## 7. File operations and conflict semantics
 

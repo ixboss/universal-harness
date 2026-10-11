@@ -112,16 +112,18 @@ test('decode: a valid envelope round-trips', () => {
 });
 
 test('advertisement: only implemented operations are advertised', () => {
-  // The exact serving set of the Phase 2 node. Anything absent — including
-  // planned-but-unimplemented ops like session.* and task.approve — must NOT
-  // be advertised (brief §7: never advertise unimplemented functionality).
+  // The exact serving set of the node. Phase 3C adds the four session
+  // operations as real dispatches; anything still unimplemented — including
+  // planned-but-absent ops like task.approve and the terminal/update family —
+  // must NOT be advertised (brief §7: never advertise unimplemented functionality).
   assert.deepEqual([...ADVERTISED_OPERATIONS].sort(), [
     'auth.connect', 'device.list', 'device.pair', 'device.revoke',
     'diagnostics.run', 'file.browse', 'file.read', 'file.write',
     'project.create', 'project.list', 'project.open',
-    'session.replay', 'task.cancel', 'task.history', 'task.list', 'task.start',
+    'session.create', 'session.list', 'session.read', 'session.replay', 'session.resume',
+    'task.cancel', 'task.history', 'task.list', 'task.start',
   ]);
-  for (const absent of ['session.list', 'session.create', 'session.read', 'session.resume', 'task.approve']) {
+  for (const absent of ['task.approve', 'terminal.exec', 'terminal.cancel', 'update.check', 'update.apply']) {
     assert.ok(!ADVERTISED_OPERATIONS.includes(absent), `"${absent}" is not implemented and must not be advertised`);
   }
 });

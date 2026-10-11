@@ -182,6 +182,67 @@ RISK-REGISTER.md applies: Android ships client-first with local execution deferr
 COMPATIBILITY.md row stays **Unverified**. We do not claim support from Mobile-Harness's
 Claude Code path alone.
 
+## Phase 3C — Controller & Session Foundation (2026-09-30)
+
+Phase 3B produced a verified execution node with no real controller. Phase 3C closes that gap
+without touching the protocol's security model:
+
+* **Session operations are real dispatches** — `session.list`, `session.create`,
+  `session.read`, `session.resume` join the advertisement and the scope table's existing
+  mapping (read-only for list/read; project-session-control for create/resume).
+  `session.resume` is a **linked continuation** (ADR-009): a new session with
+  `priorSessionId` pointing back; the dsh conversation is never reopened (R-20), and the
+  response says so on the wire. `session.read` separates Universal Harness metadata from what
+  the node can truthfully read from the dsh store (`dsh.available`, bounded opt-in transcript
+  paging) and never invents dsh data. Tasks carry their session association
+  (Project → Session → Task → Events), adopting unseen supplied sessionIds into the index.
+* **`task.history` is cursor-paginated** — deterministic eventId-ordered pages, bounded size,
+  explicit end-of-history, `TASK_NOT_FOUND` for unknown tasks, honest `staleCursor` reporting.
+  This replaces the first-1000-log-events scan.
+* **`task.start` accepts `clientRequestId`** — same device + same id + same semantic request
+  yields the SAME task (`idempotentReplay`); a materially different request with the same id is
+  a CONFLICT. Records live in the durable task store (no second idempotency database) and
+  survive restarts for the event-log retention window.
+* **Bounded connection management** — `server.maxConnections` (default 32) rejects over-cap
+  sockets before their TLS handshake; `server.idleTimeoutMs` (default 300000) reaps streams
+  silent in BOTH directions (an event-observing controller is never idle). Tasks are untouched.
+* **`diagnostics.run` is real** — reuses the doctor's building blocks (runtime integrity, dsh
+  availability, storage, task engine, server state, device counts) with redaction; the live dsh
+  process check stays CLI-only so a diagnostics request cannot collide with running tasks.
+* **Revocation semantics decided** (ADR-009, Option B): a revoked device is re-admitted only by
+  a fresh owner-minted pairing token; re-pairing refreshes the record in place.
+* **`core/client` — the UniversalClient**: the reusable platform-independent controller library
+  (pinning, pairing with node-identity proof, challenge-response auth, capabilities, sessions,
+  tasks, events/replay with reconnect, RecoverySnapshot surfacing), plus a controller-side
+  device-key/registry store under the device-local tree (sealed key or 0600 fallback; pins and
+  metadata only in `nodes.json`).
+* **`uh connect`** — the first real controller CLI (`pair | nodes | status | projects |
+  sessions | tasks | events`), with `--profile` for a second controller identity.
+* A latent validator defect was fixed: numeric `minimum`/`maximum` schema checks were dead code
+  (numbers never reached the `integer` case), so bounds such as `lastEventId ≥ 1` are enforced
+  now, and three test call sites were corrected to the schema's `null` fresh-client value.
+
+**Verification:** JS suite 187/187 (39 new tests), schema lint 7 files/0 problems, repository
+validation 0 problems, Android JVM suite 270/270 across both flavors (unchanged-green), and a
+re-run **Windows desktop-node** controller gate (`tests/manual/gate-f-controller.mjs`:
+UniversalClient-driven controller over TLS against a live node, including a second controller
+profile — 28 PASS / 0 FAIL across both phases, exit 0) plus a live `uh connect` CLI
+end-to-end pass against the same node (pair, nodes, status, projects, sessions
+create/list/read/resume, task start with idempotent replay, cursor-paginated history, durable
+event replay, and the CONFLICT / TASK_NOT_FOUND / NOT_FOUND error paths plus expired/single-use
+pairing-token rejection).
+
+**Not executed (device unavailable):** the Phase 3C controller gate was **not** run against the
+physical moto g 5G plus — at re-run time the device was unreachable (no USB attachment, no
+wireless adb, absent from the LAN ARP table). Gate E (Phase 3B) was previously executed green on
+that device, but no Phase 3C device-side evidence exists, so none is claimed. This is an
+environmental gap, not a defect, and it is recorded as NOT EXECUTED in
+[COMPATIBILITY.md](COMPATIBILITY.md). Provider-backed completion remains blocked by R-21
+(environmental, unchanged).
+
+**Out of scope (unchanged):** iOS (Phase 4), synchronization (Phase 5), hardening soak (Phase 6),
+update system, terminal execution, node-admin auto-grant, upstream dsh modification.
+
 ## Phase 4 — iOS Client
 
 Swift/SwiftUI: discovery, QR pairing, device list, projects, sessions, task streaming,

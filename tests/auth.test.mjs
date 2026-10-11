@@ -444,3 +444,65 @@ test('pairing: a real `uh pair` subprocess mints a token a separate serve-side s
   assert.ok(!fs.existsSync(path.join(deviceDir, PENDING_FILE)), 'the consumed token record is gone');
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 3C — revocation semantics (ADR-009, Option B).
+//
+// Chosen semantics: revocation is binding for authentication, but the node's
+// OWNER can deliberately re-admit a revoked device by minting a fresh pairing
+// token and completing a new pairing with the same device key. A stolen or
+// lost token grants nothing — only the owner can produce one, and it is
+// single-use, 60-second-lived, and identity-bound. Re-pairing never mints a
+// second deviceId for the same key; the record is refreshed in place.
+
+test('auth: a revoked device is re-admitted only by a fresh owner-minted pairing (ADR-009)', async () => {
+  const { auth, identity, cleanup } = await makeAuth();
+  try {
+    const { result, key } = await pairDevice(auth, identity);
+    const deviceId = result.deviceId;
+
+    // Revoke: authentication refuses immediately, and stays refused without
+    // a new pairing.
+    assert.equal(auth.revokeDevice(deviceId).status, 'revoked');
+    const challenge1 = auth.newChallenge();
+    const refused = auth.verifyChallenge({ deviceId, sigB64: key.sign(challenge1), challenge: challenge1 });
+    assert.equal(refused.ok, false);
+    assert.equal(refused.code, 'DEVICE_REVOKED');
+
+    // The device cannot re-admit itself: verifyChallenge keeps refusing no
+    // matter how many fresh signatures it produces — there is no self-service
+    // path back; only the node owner can act.
+    const stillRefused = auth.verifyChallenge({ deviceId, sigB64: key.sign(auth.newChallenge()), challenge: auth.newChallenge() });
+    assert.equal(stillRefused.ok, false);
+    const listed = auth.listDevices().find((d) => d.deviceId === deviceId);
+    assert.equal(listed.status, 'revoked');
+
+    // The owner mints a fresh token (the deliberate re-admission act) and the
+    // SAME device key re-pairs: same deviceId, no duplicate record, active again.
+    const rechallenge = auth.newChallenge();
+    const rePairing = auth.mintPairingPayload({ endpoint: 'memory://test' });
+    const reResult = auth.pair({
+      deviceName: 'phone-again',
+      platform: 'ios',
+      devicePublicKeyPem: key.publicKeyPem,
+      token: rePairing.token,
+      expectedNodeIdentitySha256: rePairing.nodeIdentitySha256,
+      sigB64: key.sign(rechallenge),
+      challenge: rechallenge,
+      requestedScopes: ['read-only', 'task-control'],
+    });
+    assert.equal(reResult.ok, true, JSON.stringify(reResult));
+    assert.equal(reResult.deviceId, deviceId, 're-pairing reuses the deviceId for the same key');
+    assert.equal(reResult.rePaired, true);
+
+    const after = auth.listDevices().filter((d) => d.deviceId === deviceId);
+    assert.equal(after.length, 1, 'no duplicate DeviceRecord was created');
+    assert.equal(after[0].status, 'active');
+    assert.deepEqual(after[0].scopes.sort(), ['read-only', 'task-control']);
+
+    // Authentication works again with the same key.
+    const challenge2 = auth.newChallenge();
+    const restored = auth.verifyChallenge({ deviceId, sigB64: key.sign(challenge2), challenge: challenge2 });
+    assert.equal(restored.ok, true);
+  } finally { cleanup(); }
+});

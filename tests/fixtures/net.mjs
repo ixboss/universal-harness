@@ -25,9 +25,11 @@ const DEFAULT_SCOPES = ['read-only', 'project-session-control', 'task-control', 
  * A temp stack with a TLS listener and a loopback listener both wired to one
  * node server.
  *
- * @param {{nodeDescriptor?: object|null, executorOptions?: object}} opts
+ * @param {{nodeDescriptor?: object|null, executorOptions?: object, tokenTtlMs?: number|null, listenerOptions?: object|null}} opts
+ *   `listenerOptions` is forwarded to createNetworkNodeListener (Phase 3C
+ *   connection-limit tests pass tiny bounds through it).
  */
-export async function buildNetStack({ nodeDescriptor = null, executorOptions = {}, tokenTtlMs = null } = {}) {
+export async function buildNetStack({ nodeDescriptor = null, executorOptions = {}, tokenTtlMs = null, listenerOptions = null } = {}) {
   const stack = await buildStack({ executorOptions, ...(tokenTtlMs ? { tokenTtlMs } : {}) });
   const server = createNodeServer({
     root: stack.root, p: stack.p,
@@ -39,6 +41,7 @@ export async function buildNetStack({ nodeDescriptor = null, executorOptions = {
   const cert = await loadOrCreateNodeTlsCertificate({ p: stack.p });
   const tlsListener = await createNetworkNodeListener({
     server, certPem: cert.certPem, keyPem: cert.privateKeyPem, host: '127.0.0.1', port: 0,
+    ...(listenerOptions || {}),
   });
   const loopbackListener = await createLoopbackNodeListener({
     server, host: '127.0.0.1', port: 0,

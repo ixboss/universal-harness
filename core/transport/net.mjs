@@ -47,6 +47,14 @@ const DEFAULT_TLS_HOST = '0.0.0.0'; // all interfaces: LAN-reachable, never port
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 const HANDSHAKE_TIMEOUT_MS = 15_000;
+// Bounded connection management (Phase 3C). Defaults leave generous room for
+// several legitimate controllers on a LAN while capping the established-stream
+// surface a hostile LAN peer could otherwise hold open forever. The idle clock
+// counts activity in BOTH directions — a controller that is only receiving
+// task events is not idle — and a reaped connection loses nothing: tasks keep
+// running node-side and the client recovers missed events by reconnect+replay.
+const DEFAULT_MAX_CONNECTIONS = 32;
+const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
 const HTTP_PATH_REQUEST = '/uh/v1/request';
 
 export class NodeTransportError extends Error {
@@ -66,12 +74,20 @@ export class NodeTransportError extends Error {
  * Start the node's single TLS listener. Every accepted connection is wrapped
  * in a Transport and given to the existing node server.
  *
- * @param {{server: object, certPem: string, keyPem: string, host?: string, port?: number, log?: object, requestTimeoutMs?: number}} opts
- * @returns {Promise<{close: (reason?: string) => void, address: () => net.AddressInfo|null, scheme: 'https'}>}
+ * Bounded connection management (Phase 3C): at most `maxConnections` sockets
+ * are held at once (counted from TCP accept, so an over-cap peer is dropped
+ * before it can even start a TLS handshake), and an established stream that
+ * goes silent in both directions for `idleTimeoutMs` is reaped. Neither bound
+ * touches task execution: tasks are node-owned and outlive any connection.
+ *
+ * @param {{server: object, certPem: string, keyPem: string, host?: string, port?: number, log?: object, requestTimeoutMs?: number, maxConnections?: number, idleTimeoutMs?: number}} opts
+ * @returns {Promise<{close: (reason?: string) => void, address: () => net.AddressInfo|null, scheme: 'https', stats: () => {activeConnections: number, rejectedConnections: number, idleReaps: number}}>}
  */
 export function createNetworkNodeListener({
   server, certPem, keyPem, host = DEFAULT_TLS_HOST, port = 0, log = null,
   requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+  maxConnections = DEFAULT_MAX_CONNECTIONS,
+  idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
 }) {
   if (!certPem || !keyPem) throw new NodeTransportError('NODE_PROTOCOL', 'a node certificate and private key are required to listen');
 
@@ -100,7 +116,24 @@ export function createNetworkNodeListener({
   // An opened TCP connection that never completes the TLS handshake must not
   // be held forever.
   const handshakeTimers = new WeakSet();
+  // Every socket the server currently owns, so a shutdown can drop them
+  // instead of waiting on a half-open peer forever — and so the connection
+  // cap counts sockets that are still mid-handshake, not just established
+  // protocol sessions.
+  const liveSockets = new Set();
+  let rejectedConnections = 0;
+  let idleReaps = 0;
+
   tlsServer.on('connection', (raw) => {
+    // Deterministic over-cap rejection: drop before the TLS handshake starts.
+    if (liveSockets.size >= maxConnections) {
+      rejectedConnections++;
+      log?.warn?.(`connection refused: at the ${maxConnections}-connection limit`);
+      raw.destroy();
+      return;
+    }
+    liveSockets.add(raw);
+    raw.once('close', () => liveSockets.delete(raw));
     if (handshakeTimers.has(raw)) return;
     handshakeTimers.add(raw);
     const timer = setTimeout(() => {
@@ -111,14 +144,6 @@ export function createNetworkNodeListener({
     raw.once('close', () => clearTimeout(timer));
   });
 
-  // Every socket the server currently owns, so a shutdown can drop them
-  // instead of waiting on a half-open peer forever.
-  const liveSockets = new Set();
-  tlsServer.on('connection', (s) => {
-    liveSockets.add(s);
-    s.once('close', () => liveSockets.delete(s));
-  });
-
   tlsServer.on('secureConnection', (socket) => {
     // The negotiated protocol decides the framing. This happens *after* the
     // handshake, so the stream transport can be created eagerly and the node's
@@ -127,7 +152,7 @@ export function createNetworkNodeListener({
       log?.info?.('accepted http request/response connection');
       httpServer.emit('connection', socket);
     } else {
-      serveStream(server, socket, { log });
+      serveStream(server, socket, { log, idleTimeoutMs, onIdleReap: () => { idleReaps++; } });
     }
   });
   tlsServer.on('tlsClientError', (e) => log?.warn?.(`tls client error: ${e?.message || e}`));
@@ -143,6 +168,7 @@ export function createNetworkNodeListener({
       resolve({
         scheme: 'https',
         address: () => addr && { ...addr },
+        stats: () => ({ activeConnections: liveSockets.size, rejectedConnections, idleReaps }),
         close(reason = 'node shutting down') {
           httpServer.close();
           // Drop live sockets first so pending clients observe the close and
@@ -160,15 +186,25 @@ export function createNetworkNodeListener({
  * Plain loopback listener. Refuses a non-loopback bind: this surface is for a
  * same-device supervisor and must never be the node's network interface.
  *
- * @param {{server: object, host?: string, port?: number, log?: object}} opts
+ * @param {{server: object, host?: string, port?: number, log?: object, maxConnections?: number, idleTimeoutMs?: number}} opts
  */
-export function createLoopbackNodeListener({ server, host = '127.0.0.1', port = 0, log = null }) {
+export function createLoopbackNodeListener({
+  server, host = '127.0.0.1', port = 0, log = null,
+  maxConnections = DEFAULT_MAX_CONNECTIONS, idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
+}) {
   if (!isLoopbackHost(host)) {
     throw new NodeTransportError('NODE_PROTOCOL', `loopback listener refuses non-loopback bind ${host}`);
   }
-  const tcpServer = net.createServer((socket) => serveStream(server, socket, { log, name: 'loopback' }));
+  const tcpServer = net.createServer((socket) => serveStream(server, socket, { log, name: 'loopback', idleTimeoutMs }));
   const liveSockets = new Set();
+  let rejectedConnections = 0;
   tcpServer.on('connection', (s) => {
+    if (liveSockets.size >= maxConnections) {
+      rejectedConnections++;
+      log?.warn?.(`connection refused: at the ${maxConnections}-connection limit`);
+      s.destroy();
+      return;
+    }
     liveSockets.add(s);
     s.once('close', () => liveSockets.delete(s));
   });
@@ -182,6 +218,7 @@ export function createLoopbackNodeListener({ server, host = '127.0.0.1', port = 
       resolve({
         scheme: 'loopback',
         address: () => addr && { ...addr },
+        stats: () => ({ activeConnections: liveSockets.size, rejectedConnections, idleReaps: 0 }),
         close(reason = 'node shutting down') {
           for (const s of liveSockets) { try { s.destroy(); } catch {} }
           liveSockets.clear();
@@ -192,17 +229,49 @@ export function createLoopbackNodeListener({ server, host = '127.0.0.1', port = 
   });
 }
 
-/** Wrap a duplex socket in the existing stream Transport and hand it to the server. */
-function serveStream(server, socket, { log = null, name = 'tls' } = {}) {
+/**
+ * Wrap a duplex socket in the existing stream Transport and hand it to the server.
+ *
+ * `idleTimeoutMs` reaps a stream that sees no activity in either direction —
+ * nothing received from the client AND nothing sent by the node — for the
+ * whole window. The reap is a transport close, exactly like a client hang-up:
+ * the server's own cleanup runs and running tasks are untouched.
+ */
+function serveStream(server, socket, { log = null, name = 'tls', idleTimeoutMs = 0, onIdleReap = null } = {}) {
+  let idleTimer = null;
+  const touch = () => {
+    if (!idleTimeoutMs) return;
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      idleReapLog(log, socket);
+      try { onIdleReap?.(); } catch {}
+      try { socket.destroy(); } catch {}
+    }, idleTimeoutMs);
+    if (typeof idleTimer.unref === 'function') idleTimer.unref();
+  };
+  const idleReapLog = (lg, sock) => lg?.warn?.(`idle connection reaped after inactivity (${sock.remoteAddress})`);
+
+  if (idleTimeoutMs) {
+    socket.on('data', touch);
+    socket.once('close', () => { if (idleTimer) clearTimeout(idleTimer); });
+  }
+
   const transport = createStreamTransport({
     input: socket,
     output: socket,
     name: `${name}:${socket.remoteAddress}:${socket.remotePort}`,
   });
+  if (idleTimeoutMs) {
+    // Node->client frames count as activity too, so a controller that is only
+    // observing task events is never considered idle while events flow.
+    const originalSend = transport.send.bind(transport);
+    transport.send = (env) => { touch(); originalSend(env); };
+  }
   transport.onClose(() => {
     // The transport already ended the socket; make sure nothing lingers.
     try { socket.destroySoon(); } catch {}
   });
+  touch();
   server.handleConnection(transport);
 }
 

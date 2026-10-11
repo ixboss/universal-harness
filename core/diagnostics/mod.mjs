@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { platformInfo } from '../platform/mod.mjs';
-import { validateRoot, findRoot, portablePaths } from '../paths/mod.mjs';
+import { validateRoot, findRoot, portablePaths, devicePaths } from '../paths/mod.mjs';
 import { createRuntimeManager } from '../runtime/mod.mjs';
 import { createWorkspaceStore } from '../workspace/mod.mjs';
 import { createSessionStore } from '../sessions/mod.mjs';
@@ -190,6 +190,132 @@ function isWritableDir(dir) {
     fs.unlinkSync(probe);
     return true;
   } catch { return false; }
+}
+export { isWritableDir };
+
+/**
+ * Node-health diagnostics for the protocol `diagnostics.run` operation
+ * (Phase 3C). Reuses the doctor's building blocks (runtime status, writable-dir
+ * probes, redaction) but never spawns dsh: a live process check inside a
+ * served request could collide with running tasks, so that check stays a
+ * CLI-only concern (`uh doctor`). Every condition string passes through the
+ * redactor and carries only presence/state information — never credentials,
+ * private keys, or file contents.
+ *
+ * @param {Object} ctx { root, p, identity, auth, events, runtimeManager, server, log }
+ * @returns {Promise<{checks: object[]}>} checks are operations.schema.json DiagnosticRecords
+ */
+export async function runNodeDiagnostics({ root, p, identity, auth, events, runtimeManager, server, log = null }) {
+  const records = [];
+  const add = (id, component, severity, condition, evidence = null, recommendedAction = 'None.', autoRepairSafe = false) =>
+    records.push({
+      id, component, severity,
+      condition: redact(String(condition)).slice(0, 500),
+      evidence: evidence == null ? null : redact(String(evidence)).slice(0, 500),
+      recommendedAction,
+      autoRepairSafe,
+    });
+
+  // --- node identity (presence and protection class only) -----------------
+  const idDesc = identity?.describe?.();
+  if (idDesc) {
+    add('node.identity', 'node', 'ok',
+      `node identity loaded (${idDesc.nodeId}, key protection: ${idDesc.protection})`);
+  } else {
+    add('node.identity', 'node', 'fail', 'node identity is not loaded');
+  }
+
+  // --- runtime integrity (same checks `uh doctor` runs, without the spawn) --
+  if (runtimeManager) {
+    try {
+      const status = await runtimeManager.status();
+      for (const c of status.checks || []) {
+        add(`runtime.${c.id}`, 'runtime', c.status === 'ok' ? 'ok' : 'fail',
+          `${c.label}: ${c.status === 'ok' ? 'ok' : `expected ${c.expected}, got ${c.actual}`}`,
+          null, c.action || 'Run `uh setup` to reinstall the pinned runtime.');
+      }
+      const dsh = runtimeManager.dshInstalled();
+      add('dsh.available', 'runtime', dsh ? 'ok' : 'warn',
+        dsh ? `dsh installed (${dsh.version})` : 'dsh is not installed; tasks cannot run',
+        null, 'Run `uh setup` to install the pinned dsh distribution.');
+    } catch (e) {
+      add('runtime.status', 'runtime', 'warn', `runtime status check failed: ${e?.message || e}`,
+        null, 'Run `uh doctor` for the full diagnostic pass.');
+    }
+  } else {
+    add('runtime.status', 'runtime', 'warn', 'no runtime manager on this node; runtime integrity not verifiable');
+    add('dsh.available', 'runtime', 'warn', 'dsh availability not verifiable: no runtime manager on this node');
+  }
+
+  // --- storage --------------------------------------------------------------
+  for (const [name, dir] of [['data', p.data], ['state', p.state]]) {
+    const ok = isWritableDir(dir);
+    add(`storage.${name}`, 'storage', ok ? 'ok' : 'fail',
+      ok ? `${name}/ directory is writable` : `${name}/ directory is not writable`,
+      null, ok ? 'None.' : `Restore write permission for ${name}/ under the portable root.`);
+  }
+  const evDesc = events?.describe?.();
+  if (evDesc) {
+    add('events.store', 'events', 'ok',
+      `durable event log healthy: head=${evDesc.head}, ${evDesc.tasks} task(s), ${evDesc.sessions} session(s)`,
+      null, 'None.');
+  }
+
+  // --- task engine ------------------------------------------------------------
+  const tasks = events?.tasksSnapshot?.() || [];
+  const byState = {};
+  for (const t of tasks) byState[t.state] = (byState[t.state] || 0) + 1;
+  const live = ['queued', 'starting', 'running', 'waiting', 'cancelling', 'recovering']
+    .filter((s) => byState[s]).map((s) => `${byState[s]} ${s}`).join(', ');
+  add('tasks.engine', 'tasks', 'ok',
+    `task engine state: ${tasks.length} task(s) total${live ? `; active: ${live}` : '; none active'}`,
+    null, 'None.');
+
+  // --- protocol/server state ---------------------------------------------
+  const desc = server?.describe?.();
+  if (desc) {
+    add('server.state', 'server', 'ok',
+      `protocol v1 serving; connections=${desc.connections}, subscribers=${desc.subscribers}, eventHead=${desc.eventHead}`,
+      null, 'None.');
+  }
+
+  // --- network state (where the node knows it) ------------------------------
+  try {
+    const endpointFile = path.join(devicePaths(p).identity, 'node-endpoint.json');
+    if (fs.existsSync(endpointFile)) {
+      const announcement = JSON.parse(fs.readFileSync(endpointFile, 'utf8'));
+      add('network.endpoint', 'network', 'ok',
+        `node endpoint announced: ${announcement.endpoint}`,
+        null, 'None.');
+    } else {
+      add('network.endpoint', 'network', 'warn',
+        'no endpoint announcement on this device (node is not listening, or runs on stdio only)');
+    }
+  } catch (e) {
+    log?.warn?.(`network diagnostic skipped: ${e?.message || e}`);
+  }
+
+  // --- security posture (counts and states only; never token/key material) --
+  try {
+    const devices = auth?.listDevices?.() || [];
+    const active = devices.filter((d) => d.status === 'active').length;
+    add('security.devices', 'security', 'ok',
+      `${devices.length} paired device record(s), ${active} active; revoked devices are refused at authentication`,
+      null, 'None.');
+    add('security.pairing', 'security', auth?.pairingOpen ? 'warn' : 'ok',
+      auth?.pairingOpen
+        ? 'a pairing token is currently open and unconsumed'
+        : 'no pairing token is open',
+      null, auth?.pairingOpen ? 'None. Unused tokens expire automatically.' : 'None.');
+  } catch (e) {
+    add('security.devices', 'security', 'warn', `device records unreadable: ${e?.message || e}`);
+  }
+
+  const rootCheck = root ? validateRoot(root) : { ok: false, problems: ['no root'] };
+  add('root.valid', 'node', rootCheck.ok ? 'ok' : 'fail',
+    rootCheck.ok ? 'portable root is usable' : `portable root problems: ${rootCheck.problems.join('; ')}`);
+
+  return { checks: records };
 }
 
 function scanForPlaintextSecrets(dir) {
