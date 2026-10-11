@@ -463,9 +463,14 @@ class UhGateEInstrumentedTest {
     private val context get() = Companion.context
     private val runtime by lazy { UhNode.create(context) }
 
-    /** A dialable LAN address of this device (site-local IPv4), or null if not on Wi-Fi. */
+    /**
+     * A dialable LAN address of this device (site-local IPv4), preferring a real
+     * LAN interface over cellular. A device can be on Wi-Fi *and* cellular at
+     * once (wlan0 + rmnet_dataN); the cellular address is not reachable from a
+     * workstation, so it must never be advertised in preference to Wi-Fi.
+     */
     private fun lanAddress(): String? = runCatching {
-        val out = mutableListOf<String>()
+        val candidates = mutableListOf<Pair<String, String>>()
         val en = NetworkInterface.getNetworkInterfaces() ?: return null
         while (en.hasMoreElements()) {
             val ni = en.nextElement()
@@ -474,11 +479,20 @@ class UhGateEInstrumentedTest {
                 if (!addr.isLoopbackAddress && addr is InetAddress && addr.hostAddress?.contains(':') == false &&
                     addr.isSiteLocalAddress
                 ) {
-                    out.add(addr.hostAddress!!)
+                    candidates.add(ni.name to addr.hostAddress!!)
                 }
             }
         }
-        out.firstOrNull().also { if (out.size > 1) evidence("lan: candidates=$out using=${out.firstOrNull()}") }
+        // Rank by interface name: Wi-Fi/ethernet/tether first, cellular (rmnet) last.
+        fun rank(name: String): Int = when {
+            name.startsWith("wlan") -> 0
+            name.startsWith("eth") || name.startsWith("usb") || name.startsWith("rndis") -> 1
+            name.startsWith("rmnet") -> 3
+            else -> 2
+        }
+        val chosen = candidates.minWithOrNull(compareBy { rank(it.first) })?.second
+        if (candidates.size > 1) evidence("lan: candidates=${candidates.map { it.first + "=" + it.second }} using=$chosen")
+        chosen
     }.getOrNull()
 
     companion object {

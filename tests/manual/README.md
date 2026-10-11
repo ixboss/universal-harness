@@ -88,11 +88,12 @@ Run (in order — the device node must stay alive while the script runs):
 
        adb shell run-as com.jarves.mh cat files/uh-state/pairing-payload-host.json > payload-1.json
 
-   The payload's `endpoint` comes from the node's `lanAddress()`. On a device
-   with both Wi-Fi and cellular that can be the **cellular** IP, which the
-   workstation cannot reach; if so, rewrite `endpoint` to the device's Wi-Fi
-   address (`adb shell ip -4 addr show wlan0`). The pinned certificate and node
-   identity are unchanged, so the client still verifies the node.
+   The payload's `endpoint` comes from the node's `lanAddress()`, which now
+   prefers a real LAN interface (Wi-Fi `wlan*` / ethernet `eth*`) over cellular
+   (`rmnet*`), so it is dialable from the workstation even on a device that is
+   on both Wi-Fi and mobile data at once. If the device has no LAN interface,
+   the payload targets a non-routable address and the gate cannot run over the
+   network.
 
 4. Run phase A, then restart the node and run phase B (one payload per run):
 
