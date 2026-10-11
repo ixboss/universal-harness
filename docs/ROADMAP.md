@@ -232,12 +232,12 @@ create/list/read/resume, task start with idempotent replay, cursor-paginated his
 event replay, and the CONFLICT / TASK_NOT_FOUND / NOT_FOUND error paths plus expired/single-use
 pairing-token rejection).
 
-**Not executed (device unavailable):** the Phase 3C controller gate was **not** run against the
-physical moto g 5G plus — at re-run time the device was unreachable (no USB attachment, no
-wireless adb, absent from the LAN ARP table). Gate E (Phase 3B) was previously executed green on
-that device, but no Phase 3C device-side evidence exists, so none is claimed. This is an
-environmental gap, not a defect, and it is recorded as NOT EXECUTED in
-[COMPATIBILITY.md](COMPATIBILITY.md). Provider-backed completion remains blocked by R-21
+**Executed on the physical device (2026-10-11):** the Phase 3C controller gate was run against the
+physical moto g 5G plus (nairo, Android 11 / API 30, arm64-v8a) over the real Wi-Fi LAN —
+`tests/manual/gate-f-controller.mjs` phase A 22/22 + phase B 6/6 = **28 PASS / 0 FAIL** (the node
+reported `nodeKind=android`; linked continuation, `clientRequestId` idempotency, durable replay,
+cursor-paginated history and multi-controller isolation all verified). Evidence:
+`diagnostics/gate-f/gatef-device-evidence.txt`. Provider-backed completion remains blocked by R-21
 (environmental, unchanged).
 
 **Out of scope (unchanged):** iOS (Phase 4), synchronization (Phase 5), hardening soak (Phase 6),

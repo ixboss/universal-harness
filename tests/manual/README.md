@@ -17,12 +17,14 @@ Run (in order):
        cd android
        ./gradlew :app:installOnlineDebug
        adb shell am instrument -w -e uhInstallRuntime true \
-         com.jarves.mh.test/com.universalharness.node.UhGateDInstrumentedTest
+         -e class com.universalharness.node.UhGateDInstrumentedTest \
+         com.jarves.mh.test/androidx.test.runner.AndroidJUnitRunner
 
 2. Start the node and mint a payload for the workstation:
 
        adb shell am instrument -w -e uhMintPayload true \
-         com.jarves.mh.test/com.universalharness.node.UhGateEInstrumentedTest
+         -e class 'com.universalharness.node.UhGateEInstrumentedTest#e09_mintPayloadForHostVerification' \
+         com.jarves.mh.test/androidx.test.runner.AndroidJUnitRunner
 
 3. Pull the pairing payload (the `run-as` pull IS the out-of-band channel — in production
    the operator scans the payload off the device screen):
@@ -64,29 +66,44 @@ truth, device-scoped idempotency).
 
 Run (in order — the device node must stay alive while the script runs):
 
-1. Build + install the current APK (Gate D once, as above).
+1. Build + install the current app and test APKs (Gate D once, as above):
 
-2. Start the node through the production foreground service and mint TWO
-   payloads (tokens are single-use; one per controller), holding the process
-   open for the script:
+       cd android
+       ./gradlew :app:installOnlineDebug :app:installOnlineDebugAndroidTest
+
+2. Start the node through the production foreground service and mint a payload,
+   holding the process open for the script:
 
        adb shell am instrument -w \
-         -e uhMintPayload true -e uhKeepNode true -e uhPayloadCount 2 \
-         -e uhHoldSeconds 240 \
-         com.jarves.mh.test/com.universalharness.node.UhGateEInstrumentedTest
+         -e uhMintPayload true -e uhKeepNode true -e uhPayloadCount 1 \
+         -e uhHoldSeconds 600 \
+         -e class 'com.universalharness.node.UhGateEInstrumentedTest#e09_mintPayloadForHostVerification' \
+         com.jarves.mh.test/androidx.test.runner.AndroidJUnitRunner
 
-3. Pull both payloads (the `run-as` pull is the out-of-band channel):
+   A node holds **one unconsumed pairing token at a time** (the pending-token
+   record is a single entry), so `-e uhPayloadCount 2` writes two payload files
+   but only the LAST token is live — the two phases cannot both use payloads
+   minted in one run. Run one phase per node run instead (below).
 
-       adb shell run-as com.jarves.mh cat files/uh-state/pairing-payload-host-1.json > payload-1.json
-       adb shell run-as com.jarves.mh cat files/uh-state/pairing-payload-host-2.json > payload-2.json
+3. Pull the payload (the `run-as` pull is the out-of-band channel):
 
-4. Run the controller gate from the workstation (two phases sharing one state
-   file; evidence lines accumulate in `<state>.evidence.txt`):
+       adb shell run-as com.jarves.mh cat files/uh-state/pairing-payload-host.json > payload-1.json
+
+   The payload's `endpoint` comes from the node's `lanAddress()`. On a device
+   with both Wi-Fi and cellular that can be the **cellular** IP, which the
+   workstation cannot reach; if so, rewrite `endpoint` to the device's Wi-Fi
+   address (`adb shell ip -4 addr show wlan0`). The pinned certificate and node
+   identity are unchanged, so the client still verifies the node.
+
+4. Run phase A, then restart the node and run phase B (one payload per run):
 
        node tests/manual/gate-f-controller.mjs phase-a payload-1.json --state gatef-state.json --expect-kind android
+       # restart the node (new instrumentation run) + mint + pull -> payload-2.json
        node tests/manual/gate-f-controller.mjs phase-b payload-2.json --state gatef-state.json
 
-   Drop `--expect-kind` when the node's kind should not be asserted. Against a
+   The node restarts on the same port (7437) with the same identity, certificate
+   and durable state, so phase B reuses phase A's state file. Drop
+   `--expect-kind` when the node's kind should not be asserted. Against a
    desktop node instead of the device, run `uh serve --listen tls://127.0.0.1:7443`
    and `uh pair --endpoint https://127.0.0.1:7443` for each payload, and pass
    `--expect-kind desktop`.
@@ -97,9 +114,9 @@ the controller/node system: pairing, authorization, sessions (linked
 continuation), idempotent submission, events, replay, pagination, and
 multi-controller isolation, all over the real network.
 
-Verification status: executed against a **desktop node** (localhost TLS,
-28/28 assertions across both phases, 2026-10-02). The **Android device** run
-was not executed in this pass — the physical device was unreachable on the LAN
-when the gate was re-run — so the device-side Gate F row in
-[docs/COMPATIBILITY.md](../../docs/COMPATIBILITY.md) is recorded as not
-executed, not as passing.
+Verification status: executed against a **Windows desktop node** (localhost TLS)
+and against the **physical moto g 5G plus** (nairo, Android 11 / API 30,
+arm64-v8a) over the real Wi-Fi LAN — **28/28 assertions across both phases,
+0 FAIL, 2026-10-11**; the device node reported `nodeKind=android`. Retained
+transcripts: `diagnostics/gate-f/gatef-state.json.evidence.txt` (desktop) and
+`diagnostics/gate-f/gatef-device-evidence.txt` (device).

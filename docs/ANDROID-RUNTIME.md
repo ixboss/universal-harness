@@ -10,9 +10,8 @@ moto g 5G plus) and cross-device over LAN (workstation script 22/22). Phase 3C a
 session operations, cursor-paginated task history, idempotent task submission, bounded
 connections, and real diagnostics to that same guest node, plus the controller side
 (`core/client` + `uh connect`). The Phase 3C controller gate was executed against a
-**Windows desktop node** (localhost TLS, `tests/manual/gate-f-controller.mjs`, 28/28); it was
-**not** run against the physical Android device in this pass, so no device-side Phase 3C claim
-is made (see [COMPATIBILITY.md](COMPATIBILITY.md)).
+**Windows desktop node** (localhost TLS) **and against the physical Android device over Wi-Fi**
+(`tests/manual/gate-f-controller.mjs`, 28/28 both) — see [COMPATIBILITY.md](COMPATIBILITY.md).
 
 What Phase 3A actually implements, how to build it, and what is verified. The honesty rules of
 [this repository](COMPATIBILITY.md) apply: a Gradle build is not a device verification. **R-01

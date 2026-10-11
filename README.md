@@ -14,16 +14,17 @@ over the local network, with no cloud dependency.
 > semantics per ADR-009, cursor-paginated task history, `clientRequestId` idempotent task
 > submission, bounded connections, real `diagnostics.run`, the `core/client` UniversalClient
 > library, and the `uh connect` controller CLI) are implemented and verified on a Windows
-> desktop node (Gate F 28/28 and a live `uh connect` end-to-end pass). Still deliberately out of scope:
+> desktop node (Gate F 28/28 and a live `uh connect` end-to-end pass) **and against the physical
+> Android device over Wi-Fi (Gate F 28/28)**. Still deliberately out of scope:
 > iOS client (Phase 4), synchronization (Phase 5), hardening soak (Phase 6), the update system,
 > and terminal execution (hard-disabled). Automated suite: 187 tests passing on Windows
 > (`node --test tests/*.test.mjs`); Android JVM suite 270/270 across both flavors. Verification
 > status per platform is recorded honestly in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md):
 > **Windows x64 smoke-executed (14/15; stage 10 blocked by the provider account's own quota —
-> R-21)**, **Android: real-device verified through the Phase 3A runtime chain and the Phase 3B
-> network/pairing surface (Gate D 8/8, Gate E 9/9 on the device); the Phase 3C controller gate was
-> NOT run against the physical device (unreachable on the LAN at re-run time) and is recorded as
-> NOT EXECUTED — provider completion stages are blocked by R-21**, **Linux/macOS: NOT TESTED** (no host).
+> R-21)**, **Android: real-device verified through the Phase 3A runtime chain, the Phase 3B
+> network/pairing surface, and the Phase 3C controller gate (Gate D 8/8, Gate E 9/9, Gate F 28/28
+> on the physical moto g 5G plus over Wi-Fi) — provider completion stages are blocked by R-21**,
+> **Linux/macOS: NOT TESTED** (no host).
 > See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## What Universal Harness is
