@@ -45,7 +45,8 @@ export const npmCliRelPath = isWindows
  * so that a portable drive prepared on one OS can be verified on another.
  * `linux-arm64` exists for the Phase 3 Android execution node (bundled arm64
  * Node under the PRoot Ubuntu rootfs); it is a declared runtime target, NOT a
- * verification claim — R-01 remains unresolved until the real-device gate.
+ * verification claim — the real-device runtime gate (R-01) has since been
+ * executed green on a physical moto g 5G plus (2026-10-01).
  */
 export const SUPPORTED_TARGETS = ['win-x64', 'linux-x64', 'macos-arm64', 'linux-arm64'];
 

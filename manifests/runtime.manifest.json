@@ -40,7 +40,7 @@
       "checksumSource": "https://nodejs.org/dist/v24.21.0/SHASUMS256.txt",
       "extractedRoot": "node-v24.21.0-linux-arm64",
       "nodeRelPath": "bin/node",
-      "verificationNote": "Target added for the Phase 3 Android execution node (bundled arm64 Node inside the PRoot Ubuntu rootfs, glibc >= 2.28). Official nodejs.org distribution; NOT verified on real hardware — R-01 stays unresolved until the TESTING.md 2a real-device gate."
+      "verificationNote": "Target added for the Phase 3 Android execution node (bundled arm64 Node inside the PRoot Ubuntu rootfs, glibc >= 2.28). Official nodejs.org distribution; the real-device runtime gate (R-01) was executed green on a physical moto g 5G plus (Android 11 / API 30, arm64-v8a) on 2026-10-01."
     }
   },
   "dsh": {
