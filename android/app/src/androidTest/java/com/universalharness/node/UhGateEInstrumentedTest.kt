@@ -397,36 +397,30 @@ class UhGateEInstrumentedTest {
             }
             val host = endpoint.host.takeIf { it != "0.0.0.0" } ?: (lanAddress() ?: "127.0.0.1")
             // Phase 3C: the controller gate needs one payload per controller
-            // identity (tokens are single-use). NOTE: the node holds ONE
-            // unconsumed pending token at a time, so minting N>1 writes N files
-            // but only the LAST token stays live — run the gate one phase per
-            // node run (see tests/manual/README.md).
-            val payloadCount = (args.getString("uhPayloadCount", "1").toIntOrNull() ?: 1).coerceIn(1, 4)
-            val minted = mutableListOf<org.json.JSONObject>()
-            for (i in 0 until payloadCount) {
-                val payload = UhNodeServer.mintPairingPayloadFor(
-                    runtime.paths, runtime.prootCommand, UhJsStage(context, runtime.paths), endpoint, host,
-                )
-                // Written to app-private storage; the workstation pulls it over `adb run-as` —
-                // the same out-of-band role an operator's QR scan plays.
-                val json = JSONObject().apply {
-                    put("v", payload.v)
-                    put("nodeId", payload.nodeId)
-                    put("endpoint", payload.endpoint)
-                    put("nodeName", payload.nodeName ?: JSONObject.NULL)
-                    put("token", payload.token)
-                    put("expiresAt", payload.expiresAt)
-                    put("nodeIdentitySha256", payload.nodeIdentitySha256)
-                    put("nodeCertSha256", payload.nodeCertSha256)
-                    put("nodePublicKeyPem", payload.nodePublicKeyPem ?: JSONObject.NULL)
-                }
-                val name = if (payloadCount == 1) "pairing-payload-host.json" else "pairing-payload-host-${i + 1}.json"
-                val file = File(stateDir, name)
-                file.writeText(json.toString(2) + System.lineSeparator())
-                minted.add(json)
-                evidence("mint: $name written for the workstation (endpoint=${payload.endpoint} token expires ${payload.expiresAt})")
-                assertTrue("the payload file must exist for the run-as pull", file.isFile)
+            // identity, and the node holds ONE unconsumed pending token at a time
+            // (minting again replaces it). The device gate therefore runs one
+            // phase per node run — mint one payload here, run phase A; start the
+            // node again, mint the next, run phase B (see tests/manual/README.md).
+            val payload = UhNodeServer.mintPairingPayloadFor(
+                runtime.paths, runtime.prootCommand, UhJsStage(context, runtime.paths), endpoint, host,
+            )
+            // Written to app-private storage; the workstation pulls it over `adb run-as` —
+            // the same out-of-band role an operator's QR scan plays.
+            val json = JSONObject().apply {
+                put("v", payload.v)
+                put("nodeId", payload.nodeId)
+                put("endpoint", payload.endpoint)
+                put("nodeName", payload.nodeName ?: JSONObject.NULL)
+                put("token", payload.token)
+                put("expiresAt", payload.expiresAt)
+                put("nodeIdentitySha256", payload.nodeIdentitySha256)
+                put("nodeCertSha256", payload.nodeCertSha256)
+                put("nodePublicKeyPem", payload.nodePublicKeyPem ?: JSONObject.NULL)
             }
+            val file = File(stateDir, "pairing-payload-host.json")
+            file.writeText(json.toString(2) + System.lineSeparator())
+            evidence("mint: pairing-payload-host.json written for the workstation (endpoint=${payload.endpoint} token expires ${payload.expiresAt})")
+            assertTrue("the payload file must exist for the run-as pull", file.isFile)
 
             // `am instrument` force-stops the app when it returns, killing the guest node with
             // it. With -e uhHoldSeconds N the test holds the process open so the workstation can

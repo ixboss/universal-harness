@@ -75,14 +75,13 @@ Run (in order — the device node must stay alive while the script runs):
    holding the process open for the script:
 
        adb shell am instrument -w \
-         -e uhMintPayload true -e uhKeepNode true -e uhPayloadCount 1 \
+         -e uhMintPayload true -e uhKeepNode true \
          -e uhHoldSeconds 600 \
          -e class 'com.universalharness.node.UhGateEInstrumentedTest#e09_mintPayloadForHostVerification' \
          com.jarves.mh.test/androidx.test.runner.AndroidJUnitRunner
 
    A node holds **one unconsumed pairing token at a time** (the pending-token
-   record is a single entry), so `-e uhPayloadCount 2` writes two payload files
-   but only the LAST token is live — the two phases cannot both use payloads
+   record is a single entry), so the two phases cannot both pair from payloads
    minted in one run. Run one phase per node run instead (below).
 
 3. Pull the payload (the `run-as` pull is the out-of-band channel):
