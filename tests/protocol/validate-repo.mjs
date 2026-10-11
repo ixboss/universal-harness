@@ -93,12 +93,15 @@ for (const f of allFiles) {
 // --- 5. implementation code lives where it belongs ---
 // Phase 1 boundary: desktop portable core under core/, bin/, tests/, manifests/ (plus root
 // package files). Phase 3 adds android/ — the pinned Mobile-Harness clean-snapshot import and
-// the Universal Harness Android node (ADR-003). Anything else (ios/, stray platform code) is
-// out of scope and must be flagged.
-const implRoots = ['core/', 'bin/', 'tests/', 'manifests/', 'android/'];
+// the Universal Harness Android node (ADR-003). Phase 4 adds ios/ — the native Swift/SwiftUI
+// control client (SwiftPM package built with xtool; no .xcodeproj). Anything else (stray
+// platform code) is out of scope and must be flagged.
+const implRoots = ['core/', 'bin/', 'tests/', 'manifests/', 'android/', 'ios/'];
 const allowedRootFiles = new Set(['package.json', '.gitignore', 'LICENSE', 'README.md',
   'THIRD_PARTY_NOTICES.md']);
-const allowedExt = new Set(['.md', '.json', '.mjs', '.cmd', '.sh']);
+const allowedExt = new Set(['.md', '.json', '.mjs', '.cmd', '.sh',
+  // Phase 4: the native iOS client (SwiftPM package built with xtool).
+  '.swift', '.yml', '.plist', '.entitlements']);
 for (const f of allFiles) {
   if (implRoots.some((p) => f.startsWith(p)) || allowedRootFiles.has(f)) continue;
   if (!allowedExt.has(extname(f))) {

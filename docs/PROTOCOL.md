@@ -16,18 +16,26 @@ Design rules:
 
 ## 1. Transport
 
-| Direction | Transport | Usage |
-|---|---|---|
-| client → node | HTTPS | Request/response operations (JSON) |
-| node → client | WSS (upgraded from same server) | Event stream, terminal output, task streaming |
-| discovery | mDNS (`_universal-harness._tcp`) | Public metadata only |
+One TLS ≥ 1.2 listener serves both usages; the client selects the framing with **ALPN** —
+`uh-ndjson` for the streaming channel, `http/1.1` for one-shot requests. There is **no WebSocket**
+anywhere in the wire. (An earlier revision of this document said "WSS (upgraded from same
+server)"; that was inaccurate — corrected 2026-10-11 against `core/transport/net.mjs`.)
 
+| Direction | Transport | Framing | Usage |
+|---|---|---|---|
+| client → node | TLS (`https`) | ALPN `http/1.1`, one-shot `POST /uh/v1/request` | Request/response operations (JSON) |
+| node → client | same TLS connection | ALPN `uh-ndjson`, newline-delimited UTF-8 JSON | Event stream, terminal output, task streaming |
+| discovery | mDNS (`_universal-harness._tcp`) | — | Public metadata only |
+
+- Every frame is exactly one JSON envelope on one line (UTF-8), capped at 1 MiB —
+  `core/transport/mod.mjs` (`createFrameDecoder` / `encodeFrame`), `core/protocol/mod.mjs`.
 - TLS is required; the node presents a **per-node certificate** pinned by clients on first
   successful pairing (trust-on-first-use, recorded per device).
 - Default binding: loopback + LAN. Binding beyond LAN is an explicit advanced option with
   warnings, and is not part of the v1 conformance tests.
-- A session concept spans both channels: one authenticated TCP connection hosts the WebSocket;
-  HTTP requests carry `Authorization: UH <deviceId> <sig>` (request-signed challenge).
+- A session concept spans both framings: one authenticated TLS connection carries the NDJSON
+  stream; one-shot HTTP requests carry `Authorization: UH <deviceId> <sig>` (request-signed
+  challenge).
 
 ## 2. Envelope
 
@@ -337,7 +345,7 @@ never a harness fork ([ADR-001](adr/ADR-001-deepseek-harness-engine.md)):
 | Graceful cancel | **Missing** — cancelled turn "commits neither…" (AUDIT §2.3) | SIGTERM (exit 0) → bounded kill → node records outcome |
 | Task exit-code contract | **Missing** — SIGTERM=0, SIGINT=130 only (AUDIT §2.4) | Node owns task state machine |
 | Workspace registry API | **Missing** as API — files at `$DSH_HOME/storages/workspace.json` (AUDIT §3.3) | Node reads/writes registry atomically |
-| Approval interception | **Partial** — permission presets + approvals (AUDIT §2.6) | Bridge presets to `task.waiting`/`task.approve` |
+| Approval interception | **Not reachable over the SDK seam** — the engine has a full approval subsystem (`@deepseek-ai/dsh-user-approval`), but `dsh --profile sdk` never sends a server→client request (its request map is `initialize`/`session/prompt`/`shutdown`; `dsh-sdk-protocol/README.md`: "Server→client requests are a dead capability"). Only the **ACP** profile exposes `session/request_permission` (`dsh-acp/README.md`) | `task.approve` stays **unadvertised** and `taskControls.approveTool:false`; the `waiting` state stays ready but unreachable. A real bridge requires moving the adapter to `--profile acp` — a Phase 6+ change (RISK-REGISTER R-23) |
 | Unknown future schema | **Versioned in code only** (AUDIT §2.5) | Schema gate: detect → fail safe → diagnostics |
 | Session-format migration | Not an upstream concern | Ours: migration subsystem (ARCHITECTURE §14) |
 

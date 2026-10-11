@@ -116,6 +116,9 @@ test('advertisement: only implemented operations are advertised', () => {
   // operations as real dispatches; anything still unimplemented — including
   // planned-but-absent ops like task.approve and the terminal/update family —
   // must NOT be advertised (brief §7: never advertise unimplemented functionality).
+  // task.approve is protocol-complete but unadvertised because the `dsh --profile sdk`
+  // seam never sends a server->client request, so no approval ask can reach the
+  // adapter (RISK-REGISTER R-23, PROTOCOL.md §10).
   assert.deepEqual([...ADVERTISED_OPERATIONS].sort(), [
     'auth.connect', 'device.list', 'device.pair', 'device.revoke',
     'diagnostics.run', 'file.browse', 'file.read', 'file.write',

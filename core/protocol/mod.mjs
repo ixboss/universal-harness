@@ -34,6 +34,15 @@ export const KINDS = {
   TASK_START: 'task.start',
   TASK_LIST: 'task.list',
   TASK_CANCEL: 'task.cancel',
+  // `task.approve` is protocol-complete — schema (`TaskApproval`), scope
+  // (`task-control`), the `waiting` task state and the durable `task.waiting`
+  // event all exist — but it is deliberately NOT advertised and NOT in the
+  // server's KNOWN_OPERATIONS. Reason: the `dsh --profile sdk` seam the adapter
+  // speaks exposes only `initialize`/`session/prompt`/`shutdown` as
+  // client->server requests and never sends a server->client request, so no
+  // engine approval ask can ever reach the adapter and no task can enter
+  // `waiting`. Advertising it would be a fake feature. See RISK-REGISTER R-23
+  // and PROTOCOL.md §10.
   TASK_APPROVE: 'task.approve',
   TASK_HISTORY: 'task.history',
   FILE_BROWSE: 'file.browse',
