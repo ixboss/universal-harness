@@ -142,7 +142,7 @@ private fun OnDeviceServerPane() {
                 Text(
                     "This phone runs the embedded Node.js/PRoot harness runtime and serves the " +
                         "Universal Protocol v1 endpoint over TLS. Other machines on the LAN can pair " +
-                        "with it using \`uh pair\` + \`uh connect\` from a desktop, or another phone.",
+                        "with it using `uh pair` + `uh connect` from a desktop, or another phone.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 if (endpoint != null) {
@@ -209,8 +209,8 @@ private fun LanRemotePane(prefs: DualModePreferences) {
                 Text("Mode 1 — LAN Remote Controller", style = MaterialTheme.typography.titleMedium)
                 Text(
                     "Connect to a Universal Harness server running on your PC, laptop or USB stick " +
-                        "(started with \`uh serve --listen tls://0.0.0.0:7437\`). Paste the pairing payload " +
-                        "printed by \`uh pair --endpoint https://<host>:<port>\` on that machine once; " +
+                        "(started with `uh serve --listen tls://0.0.0.0:7437`). Paste the pairing payload " +
+                        "printed by `uh pair --endpoint https://<host>:<port>` on that machine once; " +
                         "afterwards this device authenticates with its own key. No local rootfs needed.",
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -227,7 +227,7 @@ private fun LanRemotePane(prefs: DualModePreferences) {
         )
         OutlinedTextField(
             value = pin, onValueChange = { pin = it.trim().lowercase() },
-            label = { Text("Certificate fingerprint (SHA-256, 64 hex) — from \`uh pair\`") },
+            label = { Text("Certificate fingerprint (SHA-256, 64 hex) — from `uh pair`") },
             modifier = Modifier.fillMaxWidth(),
         )
         OutlinedTextField(
@@ -317,7 +317,7 @@ private fun LanRemotePane(prefs: DualModePreferences) {
                                     log("task started: $taskId")
                                     // A bounded observation loop: the node streams durable
                                     // events; the controller re-reads history to follow the task.
-                                    repeat(30) {
+                                    for (poll in 0 until 30) {
                                         val history = client!!.request(
                                             "task.history",
                                             mapOf("taskId" to taskId, "limit" to 50),
@@ -330,6 +330,7 @@ private fun LanRemotePane(prefs: DualModePreferences) {
                                             }
                                             break
                                         }
+                                        if (poll == 29) break
                                         Thread.sleep(2000)
                                     }
                                 }
