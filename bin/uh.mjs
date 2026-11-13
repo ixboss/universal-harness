@@ -11,7 +11,7 @@ import { UhError } from '../core/errors/mod.mjs';
 import { setupRuntime } from '../core/runtime/setup.mjs';
 import { runDoctor, printDoctorReport } from '../core/diagnostics/mod.mjs';
 import { cmdExec, cmdSmoke, cmdRuntime } from '../core/cli/modes.mjs';
-import { cmdWorkspace, cmdSession, cmdMigrate, cmdBackup, cmdRestore } from '../core/cli/registry.mjs';
+import { cmdWorkspace, cmdSession, cmdMigrate, cmdBackup, cmdRestore, cmdExport, cmdImport, cmdAdapters } from '../core/cli/registry.mjs';
 import { cmdServe, cmdPair } from '../core/cli/serve.mjs';
 import { cmdConnect } from '../core/cli/connect.mjs';
 
@@ -28,12 +28,16 @@ Commands:
   exec "<prompt>"       one-shot: launch dsh SDK, initialize, prompt, stream, complete
   smoke                 full §18 chain incl. shutdown, restart, reopen and replay
   serve                 run the Universal Protocol v1 node server on stdin/stdout
+  adapters              list the registered harness adapters and the active one
   pair                  mint a single-use pairing payload bound to this node identity
   connect <sub>         controller: pair with a node, inspect projects/sessions,
                         start and observe tasks, replay events (uh connect help)
   migrate check|apply   detect a moved workspace root and migrate safely
   backup [label]        create a versioned backup of Universal Harness metadata
   restore <label>       restore metadata backup (conflict-checked, never blind)
+  export --out <dir>    export the workspace to a portable bundle directory
+  export verify <dir>   verify a bundle's manifest and checksums (writes nothing)
+  import --bundle <dir> import a bundle (verify-then-commit; never overwrites)
   version               show version + pinned runtime manifest summary
 
 Environment:
@@ -88,9 +92,12 @@ async function main() {
       case 'migrate': return await cmdMigrate(rest, { root, p, log });
       case 'backup': return await cmdBackup(rest, { root, p, log });
       case 'restore': return await cmdRestore(rest, { root, p, log });
+      case 'export': return await cmdExport(rest, { root, p, log });
+      case 'import': return await cmdImport(rest, { root, p, log });
       case 'exec': return await cmdExec(rest, { root, p, log });
       case 'smoke': return await cmdSmoke(rest, { root, p, log });
       case 'serve': return await cmdServe(rest, { root, p, log });
+      case 'adapters': return await cmdAdapters(rest, { root, p, log });
       case 'pair': return await cmdPair(rest, { root, p, log });
       case 'connect': return await cmdConnect(rest, { root, p, log });
       default:

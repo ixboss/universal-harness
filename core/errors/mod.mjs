@@ -31,6 +31,10 @@ export const ERR = {
   WORKSPACE_INVALID: 'WORKSPACE_INVALID',
   BACKUP_INVALID: 'BACKUP_INVALID',
   BACKUP_CONFLICT: 'BACKUP_CONFLICT',
+  BUNDLE_INVALID: 'BUNDLE_INVALID',
+  BUNDLE_VERSION_UNSUPPORTED: 'BUNDLE_VERSION_UNSUPPORTED',
+  IMPORT_CONFLICT: 'IMPORT_CONFLICT',
+  WORKSPACE_LOCKED: 'WORKSPACE_LOCKED',
   MIGRATION_REFUSED: 'MIGRATION_REFUSED',
   SECURE_STORAGE_UNAVAILABLE: 'SECURE_STORAGE_UNAVAILABLE',
   CANCELLED: 'CANCELLED',
@@ -71,6 +75,10 @@ const CATEGORY_BY_CODE = {
   [ERR.WORKSPACE_INVALID]: CATEGORY.WORKSPACE,
   [ERR.BACKUP_INVALID]: CATEGORY.SECURITY,
   [ERR.BACKUP_CONFLICT]: CATEGORY.SECURITY,
+  [ERR.BUNDLE_INVALID]: CATEGORY.SECURITY,
+  [ERR.BUNDLE_VERSION_UNSUPPORTED]: CATEGORY.WORKSPACE,
+  [ERR.IMPORT_CONFLICT]: CATEGORY.WORKSPACE,
+  [ERR.WORKSPACE_LOCKED]: CATEGORY.WORKSPACE,
   [ERR.MIGRATION_REFUSED]: CATEGORY.WORKSPACE,
   [ERR.SECURE_STORAGE_UNAVAILABLE]: CATEGORY.SECURITY,
   [ERR.CANCELLED]: CATEGORY.USER,
@@ -132,6 +140,10 @@ function defaultAction(code) {
     case ERR.RUNTIME_ARCH_UNSUPPORTED: return 'This platform/architecture has no manifest entry; see COMPATIBILITY.md.';
     case ERR.DSH_MISSING: return 'Run `uh setup` to install the pinned @deepseek-ai/dsh distribution.';
     case ERR.DSH_TIMEOUT: return 'Raise the timeout or check system load; a stuck dsh is force-killed after the bound.';
+    case ERR.WORKSPACE_LOCKED: return 'Another Universal Harness command is using this workspace. Retry when it finishes, or run `uh doctor` if the lock is stale.';
+    case ERR.BUNDLE_INVALID: return 'The bundle failed validation (tampering, unsupported contents, or a hostile path). Re-export it from a trusted source.';
+    case ERR.BUNDLE_VERSION_UNSUPPORTED: return 'This bundle was produced by a newer Universal Harness. Update Universal Harness, or re-export from a compatible version.';
+    case ERR.IMPORT_CONFLICT: return 'Import never overwrites existing state. Rename or remove the listed target files, then re-run the import.';
     case ERR.SECURE_STORAGE_UNAVAILABLE: return 'Store the secret in your OS credential store, or set it in the dsh credential file; never as plaintext in the portable tree.';
     default: return 'See docs/ for this error code.';
   }

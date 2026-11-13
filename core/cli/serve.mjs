@@ -26,7 +26,8 @@ import {
   createStreamTransport,
 } from '../../core/transport/mod.mjs';
 import { createNetworkNodeListener, createLoopbackNodeListener } from '../../core/transport/net.mjs';
-import { createDshExecutor } from '../../core/executor/mod.mjs';
+import { createDshExecutor, createAdapterExecutor } from '../../core/executor/mod.mjs';
+import { normalizeAdapterName } from '../../core/adapter/registry.mjs';
 import { createRuntimeManager } from '../../core/runtime/mod.mjs';
 import { createSecureStorage } from '../../core/secrets/mod.mjs';
 import { createConfig } from '../../core/config/mod.mjs';
@@ -36,6 +37,7 @@ import path from 'node:path';
 import { devicePaths } from '../paths/mod.mjs';
 
 const SERVE_USAGE = `Usage: uh serve [--listen tls://host:port | loopback://host:port]
+                 [--adapter deepseek|omniroute|openai-compatible|claude-code|gemini-cli]
                  [--platform android] [--arch arm64] [--node-kind android]
 
 Runs the Universal Harness node server speaking Universal Protocol v1
@@ -85,19 +87,20 @@ export async function cmdServe(args, { root, p, log }) {
   const stack = await buildNodeStack({ root, p, log, runtimeManager, secureStorage });
   const nodeDescriptor = parseNodeDescriptor(args);
 
+  // Multi-Harness selection: --adapter flag > UH_ADAPTER env > config
+  // (adapter.harness, default deepseek). Unregistered names fail loudly.
+  const config = createConfig({ root, p }).load();
+  const adapterName = resolveAdapterName(args, config);
+  const executorFactory = buildExecutorFactory({ adapterName, config, runtimeManager, root, log });
+  log.info(`harness adapter: ${adapterName}`);
+
   const server = createNodeServer({
     root, p,
     identity: stack.identity,
     auth: stack.auth,
     events: stack.events,
     workspace: stack.workspace,
-    executorFactory: () => createDshExecutor({
-      rm: runtimeManager,
-      log,
-      dshHome: process.env.DSH_HOME || null,
-      cwd: root,
-      env: process.env,
-    }),
+    executorFactory,
     log,
     uhVersion: (await import('../../package.json', { with: { type: 'json' } }).catch(() => ({ default: { version: 'dev' } }))).default.version,
     runtimeManager,
@@ -112,7 +115,6 @@ export async function cmdServe(args, { root, p, log }) {
   const listenSpec = findListenSpec(args);
   if (listenSpec) {
     // Bounded connection management: portable config, sane defaults.
-    const config = createConfig({ root, p }).load();
     const limits = {
       maxConnections: Number(config.server?.maxConnections) > 0 ? Number(config.server.maxConnections) : undefined,
       idleTimeoutMs: Number(config.server?.idleTimeoutMs) > 0 ? Number(config.server.idleTimeoutMs) : undefined,
@@ -120,7 +122,6 @@ export async function cmdServe(args, { root, p, log }) {
     return runListenMode({ server, stack, listenSpec, p, secureStorage, log, limits });
   }
 
-  // ---- local stdio mode (unchanged since Phase 2) ----
   const transport = createStreamTransport({
     input: process.stdin,
     output: process.stdout,
@@ -143,6 +144,58 @@ export async function cmdServe(args, { root, p, log }) {
 
   log.info('node server shutting down');
   return 0;
+}
+
+/** --adapter <name> > UH_ADAPTER env > config adapter.harness > 'deepseek'. */
+export function resolveAdapterName(args, config) {
+  const i = args.indexOf('--adapter');
+  let raw = null;
+  if (i >= 0) {
+    raw = args[i + 1];
+    if (!raw || raw.startsWith('--')) throw usageError('--adapter requires a registry name (uh adapters lists them)');
+  }
+  raw = raw || process.env.UH_ADAPTER || config?.adapter?.harness || 'deepseek';
+  const name = normalizeAdapterName(raw);
+  if (!name) throw usageError(`unknown harness adapter "${raw}" (uh adapters lists them)`);
+  return name;
+}
+
+/**
+ * Build the per-task executor factory for the selected adapter. dsh keeps its
+ * dedicated executor; every registry adapter goes through the generic
+ * adapter executor with per-harness settings from config + env.
+ */
+export function buildExecutorFactory({ adapterName, config, runtimeManager, root, log }) {
+  if (adapterName === 'deepseek') {
+    return () => createDshExecutor({
+      rm: runtimeManager,
+      log,
+      dshHome: process.env.DSH_HOME || null,
+      cwd: root,
+      env: process.env,
+    });
+  }
+  const a = config?.adapter || {};
+  const section = adapterName === 'omniroute' ? a.omniroute
+    : adapterName === 'openai-compatible' ? a.openaiCompatible
+    : adapterName === 'claude-code' ? a.claudeCode
+    : a.geminiCli;
+  const adapterOptions = {
+    model: a.model && !a.model.startsWith('deepseek') ? a.model : null,
+    baseUrl: section?.baseUrl || null,
+    apiKey: null, // API keys never come from the portable config; env or the OS secure store only
+    command: section?.command || null,
+    args: Array.isArray(section?.args) ? section.args : null,
+  };
+  return () => createAdapterExecutor({
+    name: adapterName,
+    rm: runtimeManager,
+    log,
+    timeouts: a.timeouts || {},
+    cwd: root,
+    env: process.env,
+    adapterOptions,
+  });
 }
 
 function usageError(message) {

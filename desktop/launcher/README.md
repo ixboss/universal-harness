@@ -31,3 +31,25 @@ arguments and exit code.
 ## Status
 
 Phase 0 — skeleton. Implementation is Phase 1.
+
+## Implemented launchers (v1.0.0)
+
+| Platform | File | Starts |
+|---|---|---|
+| Windows | `windows/UniversalHarness.bat` | `uh serve --listen tls://0.0.0.0:7437` with the bundled `runtime/node/win-x64` node |
+| Linux | `linux/UniversalHarness.sh` | same with `runtime/node/linux-x64` |
+| macOS | `macos/UniversalHarness.command` | same with `runtime/node/macos-arm64` |
+
+Each launcher resolves the portable root from its own location (the USB drive
+letter may move), sets `UH_ROOT`, prints every LAN address a controller can
+target (`https://<lan-ip>:7437`), and then runs the node server in the
+foreground. Pairing payload:
+
+```
+bin/UniversalHarness.<ext> pair --endpoint https://<lan-ip>:7437
+```
+
+Paste the printed JSON into the Universal Harness Android app (LAN Remote mode)
+or run `uh connect` on another desktop. `scripts/build-desktop.mjs` copies the
+launchers into every staged bundle; the `universal` bundle carries all three,
+so one USB stick starts on any OS.

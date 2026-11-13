@@ -65,8 +65,8 @@ class AppUpdater(
 
     fun download(info: AppUpdateInfo, progress: (Long, Long) -> Unit): File {
         val directory = File(context.filesDir, "updates").also { it.mkdirs() }
-        val partial = File(directory, "mobile-harness-${BuildConfig.APP_VARIANT}.apk.part")
-        val target = File(directory, "mobile-harness-${BuildConfig.APP_VARIANT}.apk")
+        val partial = File(directory, "universal-harness-${BuildConfig.APP_VARIANT}.apk.part")
+        val target = File(directory, "universal-harness-${BuildConfig.APP_VARIANT}.apk")
         val connection = URL(info.apkUrl).openConnection() as HttpURLConnection
         try {
             connection.connectTimeout = 15_000
@@ -106,7 +106,7 @@ class AppUpdater(
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
         val archive = context.packageManager.getPackageArchiveInfo(apk.absolutePath, flags)
             ?: error("Downloaded file is not a valid APK")
-        check(archive.packageName == context.packageName) { "Update package name does not match Mobile Harness" }
+        check(archive.packageName == context.packageName) { "Update package name does not match Universal Harness" }
         val archiveVersion = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) archive.longVersionCode else archive.versionCode.toLong()
         check(archiveVersion == expectedVersionCode && archiveVersion > BuildConfig.VERSION_CODE) { "Update version does not match its manifest" }
         val installed = context.packageManager.getPackageInfo(context.packageName, flags)

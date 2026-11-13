@@ -106,6 +106,16 @@ export function createWorkspaceStore({ root, p, log = consoleShim() }) {
     const reg = loadRegistry();
     const slug = slugify(name);
     const projDir = relPath ? path.resolve(root, relPath) : path.join(p.projects || path.join(root, 'data', 'projects'), slug);
+    // Containment is checked BEFORE any filesystem access. A supplied relPath
+    // that resolves outside the portable root must never create (or even touch)
+    // anything out there — fail closed instead.
+    const rel = toPortableRelative(root, projDir);
+    if (!rel) {
+      throw new UhError(ERR.WORKSPACE_INVALID,
+        'project directory is outside the workspace root',
+        { dir: projDir },
+        'Projects must live inside the workspace (data/projects/). Pass a relative path that stays within the root.');
+    }
     ensureDir(projDir);
     const pMarker = path.join(projDir, '.uh-project.json');
     const existing = readJson(pMarker, null);

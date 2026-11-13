@@ -1,6 +1,6 @@
 {
   "name": "universal-harness",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Portable desktop execution layer around the official DeepSeek Harness (dsh). Windows x64 / Linux x64.",
   "private": true,
   "type": "module",

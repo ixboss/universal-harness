@@ -1,9 +1,42 @@
 # Universal Harness
 
-**Universal Harness** is a portable, cross-platform infrastructure layer that makes
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`@deepseek-ai/dsh`, MIT)
-run anywhere — a USB stick, a desktop, an Android phone — and be controllable from another
-machine over the local network, with no cloud dependency.
+**Universal Harness** is a portable, cross-platform infrastructure layer that runs AI harnesses
+anywhere — a USB stick, a desktop, an Android phone — and be controllable from another
+machine over the local network, with no cloud dependency. v1.0.0 ships a **Multi-Harness
+adapter registry** (DeepSeek dsh, OmniRoute, Claude Code, Gemini CLI, any OpenAI-compatible
+local gateway), a **Dual-Mode Android app** (LAN Remote Controller + Standalone On-Device
+Server), and ready-made **portable USB bundles**.
+
+<p align="center">
+  <img alt="version" src="https://img.shields.io/badge/version-1.0.0-22c55e?style=flat-square" />
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" />
+  <img alt="tests" src="https://img.shields.io/badge/tests-249%20passing-22c55e?style=flat-square" />
+  <img alt="platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Android-0ea5e9?style=flat-square" />
+  <img alt="no cloud" src="https://img.shields.io/badge/cloud-not%20required-64748b?style=flat-square" />
+</p>
+
+## Quick start
+
+```bash
+git clone https://github.com/ixboss/universal-harness.git
+cd universal-harness
+
+./bin/UniversalHarness.cmd      # Windows   (use ./bin/UniversalHarness.sh on Linux/macOS)
+uh setup                        # download + verify the pinned runtime and dsh
+uh doctor                       # check this machine
+uh exec "summarise the README"  # one-shot prompt through the pinned dsh
+```
+
+No system Node, npm, Python or Git is required — the launcher runs the *bundled* runtime. Move
+the whole folder to a USB stick and it keeps working.
+
+**Move a workspace between machines** (Phase 5):
+
+```bash
+uh export --out ./backup.uhbundle      # metadata-only, checksummed directory bundle
+uh export verify ./backup.uhbundle     # verify before trusting it
+uh import --bundle ./backup.uhbundle   # verify-then-commit; never overwrites
+```
 
 > **Status: Phase 3C — controller and session foundation.** Phases 0/0.1 (architecture, schemas),
 > 1 (portable desktop core), 2 (Universal Protocol v1 node server), 3A (Android runtime
@@ -15,9 +48,12 @@ machine over the local network, with no cloud dependency.
 > submission, bounded connections, real `diagnostics.run`, the `core/client` UniversalClient
 > library, and the `uh connect` controller CLI) are implemented and verified on a Windows
 > desktop node (Gate F 28/28 and a live `uh connect` end-to-end pass) **and against the physical
-> Android device over Wi-Fi (Gate F 28/28)**. Still deliberately out of scope:
-> synchronization (Phase 5), hardening soak (Phase 6), the update system,
-> and terminal execution (hard-disabled). Automated suite: 187 tests passing on Windows
+> Android device over Wi-Fi (Gate F 28/28)**. Phase 5 (cross-platform synchronization)
+> stages **S1–S3 are implemented** — safety primitives plus `uh export` / `uh import`
+> workspace bundles ([ADR-011](docs/adr/ADR-011-workspace-bundles.md)); stage S4 (the Android
+> leg) is outstanding and requires the physical device. Still deliberately out of scope:
+> hardening soak (Phase 6), the update system, and terminal execution (hard-disabled).
+> Automated suite: 249 tests passing on Windows
 > (`node --test tests/*.test.mjs`); Android JVM suite 270/270 across both flavors. Verification
 > status per platform is recorded honestly in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md):
 > **Windows x64 smoke-executed (14/15; stage 10 blocked by the provider account's own quota —
@@ -26,6 +62,76 @@ machine over the local network, with no cloud dependency.
 > on the physical moto g 5G plus over Wi-Fi) — provider completion stages are blocked by R-21**,
 > **Linux/macOS: NOT TESTED** (no host).
 > See [docs/ROADMAP.md](docs/ROADMAP.md).
+
+## Multi-Harness adapters
+
+The harness engine is pluggable — `uh serve`, `uh exec` and the Android controller all select
+an adapter from the registry in `core/adapter/registry.mjs`:
+
+| Adapter | Transport | Typical use |
+|---|---|---|
+| `deepseek` | `@deepseek-ai/dsh` stdio JSON-RPC | the original, hash-pinned dsh SDK harness |
+| `omniroute` | OpenAI-compatible HTTP + SSE | a local multi-account OmniRoute router/gateway |
+| `openai-compatible` | OpenAI-compatible HTTP + SSE | any local router: llama.cpp server, LM Studio, Ollama `/v1`, vLLM |
+| `claude-code` | CLI process (stream JSON) | the Claude Code CLI |
+| `gemini-cli` | CLI process | the Gemini CLI |
+
+Select the active harness three ways (in precedence order):
+
+```bash
+uh serve --adapter omniroute            # 1. CLI flag
+UH_ADAPTER=claude-code uh serve         # 2. environment variable
+# 3. data/config/config.json → { "adapter": { "harness": "gemini-cli" } }
+```
+
+`uh adapters` lists the registered adapters and the active one. Per-adapter settings live in
+`config.json` (`adapter.omniroute.baseUrl`, `adapter.claudeCode.command`, …) with
+`UH_OMNIROUTE_*` / `UH_OPENAI_*` / `UH_CLAUDE_*` / `UH_GEMINI_*` environment overrides. API keys
+are never stored in the portable config — use the OS secure store or environment variables.
+
+## Dual-Mode Android app
+
+The Android app runs in either of two first-class modes, chosen from the switcher at the top of
+the app and persisted on the device:
+
+- **Mode 1 — LAN Remote Controller**: connect over Wi-Fi/LAN to a Universal Harness node running
+  on a PC, laptop or USB stick (`uh serve --listen tls://0.0.0.0:7437`). Paste the pairing
+  payload from `uh pair --endpoint https://<host>:<port>` once; the app then authenticates with
+  its own Ed25519 device key over TLS with the pinned certificate fingerprint. Sessions can be
+  listed/created and tasks started and observed remotely — with **zero local rootfs
+  requirement** in this mode.
+- **Mode 2 — Standalone On-Device Server**: the embedded Node.js/PRoot harness runtime runs
+  directly on the phone as a foreground service (`NodeServerService`, advertised over
+  mDNS/NSD). The phone is a self-contained portable server; other machines on the LAN pair
+  with it via `uh pair` + `uh connect`, or another phone in LAN Remote mode.
+
+## USB flash drive setup
+
+Build a ready-to-run portable bundle (Node runtimes are downloaded and SHA-256 verified against
+`manifests/runtime.manifest.json`, then staged into the bundle):
+
+```bash
+node scripts/build-desktop.mjs --all --out dist   # win-x64 + linux-x64 + macos-arm64 + universal
+node scripts/publish-release.mjs --out dist       # SHA256SUMS.txt (+ --publish → GitHub Release)
+```
+
+This produces `UniversalHarness-<version>-usb-<target>.zip|.tar.gz` plus a
+`UniversalHarness-<version>-usb-universal.zip` carrying **all three runtimes and all three
+desktop launchers** — one stick starts on any OS. Copy the folder to a USB stick and
+double-click the launcher for the machine you are sitting at:
+
+| Platform | Launcher |
+|---|---|
+| Windows | `desktop/windows/UniversalHarness.bat` |
+| Linux | `desktop/linux/UniversalHarness.sh` |
+| macOS | `desktop/macos/UniversalHarness.command` |
+
+Each launcher resolves the portable root from its own location, starts
+`uh serve --listen tls://0.0.0.0:7437`, and prints the LAN addresses a controller can pair
+with. `data/` and `logs/` exist out of the box, so first launch never hits
+`UH_ROOT_NOT_FOUND` (exit 12). Release automation lives in
+[.github/workflows/release.yml](.github/workflows/release.yml); CI in
+[.github/workflows/ci.yml](.github/workflows/ci.yml).
 
 ## What Universal Harness is
 
@@ -106,13 +212,16 @@ universal-harness/
 │   ├── diagnostics/         doctor checks with Expected/Actual/Action reporting
 │   ├── cli/                 CLI modes (setup/doctor/smoke/exec) + metadata commands
 │   ├── protocol/            Universal Protocol message handling (Phase 2)
-│   ├── portable/            portable fs helpers, locks (Phase 2 expansion)
+│   ├── portable/            atomic write, advisory workspace lock, path guards (Phase 5 S1)
+│   ├── bundle/              workspace export/import bundles (Phase 5 S2–S3, ADR-011)
 │   ├── update/              staged update/rollback (Phase 6)
 │   └── server/              execution-node server (Phase 2)
 ├── desktop/                 launcher + per-platform entry scripts (windows/linux/macos)
 ├── android/                 Android execution node (Phase 3: adapted Mobile-Harness)
+├── scripts/                 build-desktop / verify-licenses / diagnose-ci / publish-release
+├── .github/workflows/       CI + automated v* release pipeline
 ├── shared/protocol/         machine-readable protocol contract (JSON Schema)
-├── tests/                   automated suite (187 tests) + protocol validators
+├── tests/                   automated suite (249 tests) + protocol validators
 └── third_party/             vendored components (with their LICENSE files)
 ```
 
@@ -121,7 +230,7 @@ The *portable distribution layout* (what ends up on the USB stick) is defined in
 
 ## Phase 1 — what is implemented
 
-Implemented and automated-tested (the full suite is now 187 tests — see [docs/TESTING.md](docs/TESTING.md)):
+Implemented and automated-tested (the full suite is now 244 tests — see [docs/TESTING.md](docs/TESTING.md)):
 
 - **Bundled runtime** — Node v24.21.0 per platform, downloaded from nodejs.org with SHA-256
   verified *before* unpacking, and a whole-tree hash recorded on install so tampering is
@@ -156,6 +265,26 @@ Implemented and automated-tested (the full suite is now 187 tests — see [docs/
 Not in Phase 1 scope (by the brief's strict boundary): Android, PRoot, LAN discovery,
 pairing, the Universal Protocol server, remote control, cloud backend, event sync, distributed
 orchestration, Mobile-Harness import, and any dsh fork — none of these are implemented.
+
+## Phase 5 — portable workspace bundles
+
+Move a workspace between machines without a cloud account:
+
+- **`uh export --out <dir>`** writes a versioned, self-describing, checksummed **directory**
+  bundle ([ADR-011](docs/adr/ADR-011-workspace-bundles.md)). Metadata only by default (workspace
+  identity, registry, config, session index, migration history, project markers);
+  `--include-projects` adds project source trees.
+- **`uh import --bundle <dir>`** is **verify-then-commit**: every entry's SHA-256 and the
+  manifest checksum are checked before anything is written, and a bundle may only carry an
+  allowlisted set of paths. It **never overwrites** — a target that already differs aborts the
+  whole import with a per-file report (`IMPORT_CONFLICT`); identical files are skipped, so
+  re-importing is idempotent.
+- **`uh export verify <dir>`** checks a bundle and writes nothing.
+
+Nothing device-local, secret, regenerable or node-owned ever travels: no secrets, no logs, no
+runtime, no event log, no nested backups. An absolute source path never travels either — the
+recorded root is re-derived on the importing machine. Both commands hold the advisory workspace
+lock, so two Universal Harness commands never mutate one workspace at once.
 
 ## Verification levels (never blurred)
 

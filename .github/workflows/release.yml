@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  desktop-bundles:
+    name: Portable USB/Desktop bundles
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      matrix:
+        include:
+          - { os: windows-latest, targets: '--target win-x64' }
+          - { os: ubuntu-latest, targets: '--target linux-x64' }
+          - { os: macos-latest, targets: '--target macos-arm64 --target linux-x64' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Build portable bundle(s)
+        run: node scripts/build-desktop.mjs ${{ matrix.targets }} --out dist
+      - name: Stage artifacts for the release job
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  android-apk:
+    name: Release Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - name: Assemble signed release APK
+        working-directory: android
+        env:
+          UH_KEYSTORE_PATH: ${{ secrets.UH_KEYSTORE_PATH }}
+          UH_KEYSTORE_PASSWORD: ${{ secrets.UH_KEYSTORE_PASSWORD }}
+          UH_KEY_ALIAS: ${{ secrets.UH_KEY_ALIAS }}
+          UH_KEY_PASSWORD: ${{ secrets.UH_KEY_PASSWORD }}
+        run: ./gradlew assembleOnlineRelease
+      - name: Stage APK for the release job
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-android
+          path: android/app/build/outputs/apk/online/release/*.apk
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: [desktop-bundles, android-apk]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Collect dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist-staged
+          merge-multiple: true
+      - name: Move artifacts into dist/
+        run: |
+          mkdir -p dist
+          find dist-staged -name '*.zip' -o -name '*.tar.gz' -o -name '*.apk' | while read -r f; do
+            cp "$f" dist/
+          done
+          ls -la dist/
+      - name: Generate SHA256SUMS.txt and publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/publish-release.mjs --out dist --publish

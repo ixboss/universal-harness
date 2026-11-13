@@ -23,13 +23,14 @@
 // store's job.
 
 import { createAdapter } from '../adapter/mod.mjs';
+import { createNamedAdapter } from '../adapter/registry.mjs';
 import { redact } from '../errors/mod.mjs';
 
 /**
  * The production executor: one dsh SDK child per task, driven exactly as the
  * adapter already drives it. Nothing upstream is replaced.
  */
-export function createDshExecutor({ rm, log, timeouts, dshHome, cwd, env }) {
+export function createDshExecutor({ rm, log, timeouts, dshHome, cwd, env, create }) {
   let adapter = null;
   let settled = false;
 
@@ -37,7 +38,7 @@ export function createDshExecutor({ rm, log, timeouts, dshHome, cwd, env }) {
     kind: 'dsh',
     start({ taskId, sessionId, prompt, onLive, onExit }) {
       const live = typeof onLive === 'function' ? onLive : () => {};
-      adapter = createAdapter({ rm, log, timeouts, dshHome, cwd, env });
+      adapter = (create || ((o) => createAdapter(o)))({ rm, log, timeouts, dshHome, cwd, env });
 
       let resolveDone, rejectDone;
       const done = new Promise((res, rej) => { resolveDone = res; rejectDone = rej; });
@@ -89,6 +90,19 @@ export function createDshExecutor({ rm, log, timeouts, dshHome, cwd, env }) {
       };
     },
   };
+}
+
+/**
+ * The registry-driven executor: drives any adapter from the Multi-Harness
+ * registry (core/adapter/registry.mjs) through the exact same executor
+ * interface as the dsh executor above. `name` is a registry id or alias
+ * ('deepseek', 'omniroute', 'openai-compatible', 'claude-code', 'gemini-cli');
+ * `adapterOptions` carries per-adapter settings resolved from config/env
+ * (base URL, model, command, api key).
+ */
+export function createAdapterExecutor({ name, rm, log, timeouts, cwd, env = {}, adapterOptions = {} }) {
+  const exec = createDshExecutor({ rm, log, timeouts, cwd, env, create: (opts) => createNamedAdapter(name, { ...opts, ...adapterOptions }) });
+  return { ...exec, kind: name };
 }
 
 function redactChunk(params) {

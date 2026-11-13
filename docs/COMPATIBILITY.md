@@ -104,3 +104,19 @@ Nothing here says "Verified" until a real test produces evidence recorded in [TE
 Rows are added as real test evidence accumulates; a claim may only move to
 "Verified" by a recorded real-platform test outcome — never by source-level evidence or
 documentation alone.
+
+## Phase 5 — workspace bundles (2026-10-16)
+
+`uh export` / `uh import` transfer Universal Harness metadata as a directory bundle
+([ADR-011](adr/ADR-011-workspace-bundles.md)). Verification is recorded honestly, per row.
+
+| Aspect | Status |
+|---|---|
+| Format, manifest, checksums, inclusion/exclusion rules | **automated-tested** (`tests/bundle.test.mjs`) |
+| Host round trip (Windows → Windows, fresh root) | **automated-tested** (`tests/bundle-import.test.mjs`) |
+| Hostile-bundle refusal (tamper, traversal, symlink, collision, reserved name, limits) | **automated-tested** |
+| Conflict policy — never overwrites | **automated-tested** |
+| Advisory workspace lock held by export/import | **automated-tested** (`tests/portable-safety.test.mjs`) |
+| Windows → Android round trip | **NOT EXECUTED** — requires the physical device (S4 outstanding) |
+| Linux / macOS | **NOT TESTED** — no host (R-22) |
+| Real exFAT / no-symlink matrix | **NOT TESTED** — no exFAT device (R-04 stays *Mitigating*) |

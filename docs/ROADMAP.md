@@ -259,6 +259,31 @@ history stay valid. The controller surface is the `uh connect` CLI and the `core
 Portable workspace import/export, conflict detection (never auto-overwrite), backups,
 migration matrix including Android, device sync.
 
+**Status (2026-10-16): S1, S2, S3 and S5 implemented; S4 outstanding.**
+
+| Stage | Deliverable | Status |
+|---|---|---|
+| **S1** | Safety primitives — atomic write, advisory workspace lock, path canonicalisation/validation; `resolvePortable` containment guard; containment checked before `ensureDir` | ✅ implemented, `tests/portable-safety.test.mjs` |
+| **S2** | Bundle format + `uh export` — versioned, self-describing, checksummed directory bundle; metadata-only by default | ✅ implemented, `tests/bundle.test.mjs` |
+| **S3** | Hardened `uh import` — verify-then-commit, allowlist, no symlinks, no collision, conflict policy that **never overwrites** | ✅ implemented, `tests/bundle-import.test.mjs` |
+| **S4** | Android leg — invoke `uh export`/`uh import` in the guest Node | ❌ **outstanding** — requires the physical device |
+| **S5** | Docs, ADR and risk closure | ✅ [ADR-011](adr/ADR-011-workspace-bundles.md), this entry, COMPATIBILITY/RISK-REGISTER updates |
+
+The format, the conflict policy and the security rationale are recorded in
+[ADR-011](adr/ADR-011-workspace-bundles.md). Verification: JS suite 244/244 (24 new bundle
+tests), schema lint 7 files / 0 problems. `validate-repo.mjs` remains environment-blocked on
+this host (its `git ls-files` subprocess cannot spawn — `EBUSY`); the equivalent content checks
+pass with the file list supplied out-of-band, and that substitution is labelled, never claimed
+as the script passing.
+
+**Not in Phase 5 scope:** `sync.workspace` as a wire operation (a local bundle satisfies the
+requirement — ADR-011), live device-to-device sync, distributed conflict resolution, SAF
+transfer, cloud/accounts, and any session-content rewriting.
+
+**S4 cannot be completed on this host** — it needs the physical moto g 5G plus. The Windows↔Android
+round trip is therefore **not executed** and no claim is made for it; the Android row stays
+Unverified for this feature.
+
 ## Phase 6 — Hardening
 
 Security review, crash recovery, corrupted-runtime recovery, protocol fuzzing where practical,

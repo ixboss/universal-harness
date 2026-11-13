@@ -27,11 +27,22 @@ export const DEFAULT_CONFIG = {
   runtime: { channel: 'pinned', preferBundledNode: true },
   workspace: { defaultLabel: null },
   adapter: {
+    // The active harness adapter (Multi-Harness registry, core/adapter/
+    // registry.mjs): deepseek | omniroute | openai-compatible | claude-code |
+    // gemini-cli. Resolved per serve/exec: --adapter flag > UH_ADAPTER env >
+    // this value.
+    harness: 'deepseek',
     provider: 'deepseek-official',
     model: 'deepseek-official',
     reasoningEffort: null,
     maxTokens: null,
     timeouts: {},
+    // Per-harness settings (overridden by UH_OMNIROUTE_* / UH_OPENAI_* /
+    // UH_CLAUDE_* / UH_GEMINI_* environment variables).
+    omniroute: { baseUrl: null, model: null, apiKeyRef: null },
+    openaiCompatible: { baseUrl: null, model: null, apiKeyRef: null },
+    claudeCode: { command: null, args: null },
+    geminiCli: { command: null, args: null },
   },
   // Bounded connection management for the network listener (Phase 3C). The
   // defaults keep room for several legitimate LAN controllers while capping

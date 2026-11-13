@@ -7,9 +7,28 @@ import path from 'node:path';
 import { createWorkspaceStore } from '../workspace/mod.mjs';
 import { createSessionStore } from '../sessions/mod.mjs';
 import { createBackup, listBackups, verifyBackup, restoreBackup } from '../backup/mod.mjs';
+import { exportWorkspace, importBundle, verifyBundle } from '../bundle/mod.mjs';
 import { checkMove, applyMigration, migrationHistory, validateMigration } from '../migration/mod.mjs';
 import { redact } from '../errors/mod.mjs';
+import { listAdapters } from '../adapter/registry.mjs';
 import os from 'node:os';
+
+/** `uh adapters` — list the registered harness adapters and the active one. */
+export async function cmdAdapters(args, { root, p, log }) {
+  let active = null;
+  try {
+    const { createConfig } = await import('../config/mod.mjs');
+    active = createConfig({ root, p }).load()?.adapter?.harness || 'deepseek';
+  } catch { active = 'deepseek'; }
+  console.log('registered harness adapters:');
+  for (const a of listAdapters()) {
+    const flag = a.id === active ? '  [active]' : '';
+    console.log(`  ${a.id.padEnd(18)} ${a.kind.padEnd(14)} ${a.label}${flag}`);
+    console.log(`      ${a.description}`);
+  }
+  console.log(`\nselect with \`uh serve --adapter <id>\`, UH_ADAPTER, or data/config/config.json (adapter.harness).`);
+  return 0;
+}
 
 export async function cmdWorkspace(args, { root, p, log }) {
   const store = createWorkspaceStore({ root, p, log });
@@ -139,4 +158,59 @@ function redactObject(obj) {
       : v;
   }
   return out;
+}
+
+/** Read a `--flag value` or `--flag=value` option from an argv slice. */
+function flagValue(args, name) {
+  const i = args.indexOf(name);
+  if (i >= 0 && i + 1 < args.length && !args[i + 1].startsWith('-')) return args[i + 1];
+  const eq = args.find((a) => a.startsWith(`${name}=`));
+  return eq ? eq.slice(name.length + 1) : null;
+}
+
+export async function cmdExport(args, { root, p, log }) {
+  if (args[0] === 'verify') {
+    const bundle = flagValue(args, '--bundle') || args[1];
+    if (!bundle) { console.log('usage: uh export verify <dir>'); return 2; }
+    const v = await verifyBundle({ bundleDir: path.resolve(bundle) });
+    console.log(`bundle ${v.ok ? 'OK' : 'INVALID'}: ${v.manifest?.totals?.files ?? '?'} file(s)`);
+    for (const problem of v.problems.slice(0, 10)) console.log(`  ${problem.reason}: ${problem.message}`);
+    return v.ok ? 0 : 1;
+  }
+  const out = flagValue(args, '--out') || args.find((a) => !a.startsWith('-'));
+  if (!out) { console.log('usage: uh export --out <dir> [--include-projects] [--force]'); return 2; }
+  try {
+    const res = await exportWorkspace({
+      root, p, outDir: path.resolve(out),
+      includeProjects: args.includes('--include-projects'),
+      force: args.includes('--force'),
+      log,
+    });
+    console.log(`exported ${res.manifest.totals.files} file(s), ${res.manifest.totals.bytes} bytes -> ${res.out}`);
+    return 0;
+  } catch (e) {
+    console.log(`${e.code || 'ERROR'}: ${e.message}`);
+    if (e.action) console.log(`action: ${e.action}`);
+    return 1;
+  }
+}
+
+export async function cmdImport(args, { root, p, log }) {
+  const bundle = flagValue(args, '--bundle') || args.find((a) => !a.startsWith('-'));
+  if (!bundle) { console.log('usage: uh import --bundle <dir> [--dry-run]'); return 2; }
+  try {
+    const res = await importBundle({ root, p, bundleDir: path.resolve(bundle), dryRun: args.includes('--dry-run'), log });
+    if (res.dryRun) {
+      console.log(`dry-run: would write ${res.toWrite.length} file(s), skip ${res.skipped.length} identical`);
+    } else {
+      console.log(`imported: wrote ${res.toWrite.length} file(s), skipped ${res.skipped.length} identical${res.rootRederived ? ', recorded root re-derived' : ''}`);
+    }
+    return 0;
+  } catch (e) {
+    console.log(`${e.code || 'ERROR'}: ${e.message}`);
+    for (const c of (e.context && e.context.conflicts) || []) console.log(`  conflict: ${c.path}`);
+    for (const pr of (e.context && e.context.problems) || []) console.log(`  problem: ${pr.message || pr.reason}`);
+    if (e.action) console.log(`action: ${e.action}`);
+    return 1;
+  }
 }

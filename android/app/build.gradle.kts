@@ -14,11 +14,38 @@ val testSecrets = Properties().apply {
 val playBuild = providers.gradleProperty("playBuild").orNull?.toBoolean() == true ||
     providers.gradleProperty("playFeasibility").orNull?.toBoolean() == true
 val privacyPolicyUrl = providers.gradleProperty("privacyPolicyUrl").orNull
-    ?: "https://github.com/techjarves/Mobile-Harness/blob/main/PRIVACY.md"
-val uploadStorePath = providers.environmentVariable("MH_UPLOAD_STORE_FILE").orNull
-val uploadStorePassword = providers.environmentVariable("MH_UPLOAD_STORE_PASSWORD").orNull
-val uploadKeyAlias = providers.environmentVariable("MH_UPLOAD_KEY_ALIAS").orNull
-val uploadKeyPassword = providers.environmentVariable("MH_UPLOAD_KEY_PASSWORD").orNull
+    ?: "https://github.com/ixboss/universal-harness/blob/main/android/PRIVACY.md"
+// Release signing (v1.0.0): cross-platform env vars. The legacy MH_* names are
+// honoured as a fallback for existing CI setups.
+val uploadStorePath = providers.environmentVariable("UH_KEYSTORE_PATH").orNull
+    ?: providers.environmentVariable("MH_UPLOAD_STORE_FILE").orNull
+val uploadStorePassword = providers.environmentVariable("UH_KEYSTORE_PASSWORD").orNull
+    ?: providers.environmentVariable("MH_UPLOAD_STORE_PASSWORD").orNull
+val uploadKeyAlias = providers.environmentVariable("UH_KEY_ALIAS").orNull
+    ?: providers.environmentVariable("MH_UPLOAD_KEY_ALIAS").orNull
+val uploadKeyPassword = providers.environmentVariable("UH_KEY_PASSWORD").orNull
+    ?: providers.environmentVariable("MH_UPLOAD_KEY_PASSWORD").orNull
+
+// Automatic fallback keystore so Windows local builds and Linux CI runners
+// produce *installable* release APKs with zero setup. The fallback is generated
+// on demand with keytool from the JDK running Gradle (no binary committed).
+val fallbackKeystore = rootProject.file("keystore/fallback-release.jks")
+if (!fallbackKeystore.isFile) {
+    val keytool = java.io.File(System.getProperty("java.home"), if (org.gradle.internal.os.OperatingSystem.current().isWindows) "bin/keytool.exe" else "bin/keytool")
+    if (keytool.isFile) {
+        fallbackKeystore.parentFile.mkdirs()
+        val proc = ProcessBuilder(
+            keytool.absolutePath, "-genkeypair", "-v",
+            "-keystore", fallbackKeystore.absolutePath,
+            "-alias", "universal-harness",
+            "-keyalg", "RSA", "-keysize", "2048", "-validity", "10950",
+            "-storepass", "universal-harness", "-keypass", "universal-harness",
+            "-dname", "CN=Universal Harness Fallback Release, O=universal-harness, C=US",
+        ).redirectErrorStream(true).start()
+        val out = proc.inputStream.bufferedReader().readText()
+        check(proc.waitFor() == 0) { "could not generate the fallback release keystore:\n$out" }
+    }
+}
 val hasUploadSigning = listOf(
     uploadStorePath,
     uploadStorePassword,
@@ -26,9 +53,9 @@ val hasUploadSigning = listOf(
     uploadKeyPassword,
 ).all { !it.isNullOrBlank() }
 val runtimeReleaseBaseUrl =
-    "https://github.com/techjarves/Mobile-Harness/releases/download/runtime-2026.09.4"
+    "https://github.com/ixboss/universal-harness/releases/download/runtime-v1.0.0"
 val appUpdateManifestUrl =
-    "https://github.com/techjarves/Mobile-Harness/releases/latest/download/mobile-harness-update.json"
+    "https://github.com/ixboss/universal-harness/releases/latest/download/universal-harness-update.json"
 val runtimeBundleDir = rootProject.layout.projectDirectory.dir("dist/runtime-bundles")
 val generatedRuntimeAssets = layout.buildDirectory.dir("generated/runtime-assets")
 
@@ -88,12 +115,24 @@ android {
     ndkVersion = providers.gradleProperty("mhNdkVersion").orNull ?: "26.1.10909125"
 
     signingConfigs {
-        if (hasUploadSigning) {
-            create("upload") {
-                storeFile = rootProject.file(checkNotNull(uploadStorePath))
+        create("upload") {
+            if (hasUploadSigning) {
+                storeFile = if (java.io.File(checkNotNull(uploadStorePath)).isAbsolute) {
+                    java.io.File(checkNotNull(uploadStorePath))
+                } else {
+                    rootProject.file(uploadStorePath!!)
+                }
                 storePassword = checkNotNull(uploadStorePassword)
                 keyAlias = checkNotNull(uploadKeyAlias)
                 keyPassword = checkNotNull(uploadKeyPassword)
+            } else if (fallbackKeystore.isFile) {
+                // Zero-setup fallback: installable, but not for Play upload. The
+                // literal credentials below are public by design (generated
+                // on-demand keystore) — uh-secret-fixture.
+                storeFile = fallbackKeystore
+                storePassword = "universal-harness" // uh-secret-fixture (public by design)
+                keyAlias = "universal-harness"
+                keyPassword = "universal-harness" // uh-secret-fixture (public by design)
             }
         }
     }
@@ -106,8 +145,8 @@ android {
         targetSdk = if (playBuild) 36 else 28
         // Keep literal defaults so F-Droid's static manifest parser can detect
         // the tagged release. Gradle properties may still override Play builds.
-        versionCode = 5
-        versionName = "1.0.4"
+        versionCode = 6
+        versionName = "1.0.0"
         providers.gradleProperty("appVersionCode").orNull?.toIntOrNull()?.let { versionCode = it }
         providers.gradleProperty("appVersionName").orNull?.let { versionName = it }
 
@@ -159,9 +198,9 @@ android {
         }
         release {
             isMinifyEnabled = false
-            if (hasUploadSigning) {
-                signingConfig = signingConfigs.getByName("upload")
-            }
+            // Env-signed when credentials are present; otherwise the generated
+            // fallback keystore still produces an installable APK.
+            signingConfig = signingConfigs.getByName("upload")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -210,7 +249,7 @@ tasks.register("playReadinessCheck") {
             "privacyPolicyUrl must be a public HTTPS URL."
         }
         check(hasUploadSigning) {
-            "Set MH_UPLOAD_STORE_FILE, MH_UPLOAD_STORE_PASSWORD, MH_UPLOAD_KEY_ALIAS, and MH_UPLOAD_KEY_PASSWORD."
+            "Set UH_KEYSTORE_PATH, UH_KEYSTORE_PASSWORD, UH_KEY_ALIAS, and UH_KEY_PASSWORD."
         }
     }
 }

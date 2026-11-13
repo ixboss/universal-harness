@@ -1,0 +1,12 @@
+{
+  "versionCode": 6,
+  "versionName": "1.0.0",
+  "notes": "Universal Harness v1.0.0: Multi-Harness adapter registry (DeepSeek, OmniRoute, Claude, Gemini, any OpenAI-compatible gateway), Dual-Mode operation (LAN Remote Controller + Standalone On-Device Server), and portable USB packaging.",
+  "artifacts": {
+    "online": {
+      "url": "https://github.com/ixboss/universal-harness/releases/download/v1.0.0/UniversalHarness-v1.0.0-android.apk",
+      "sha256": null,
+      "sizeBytes": null
+    }
+  }
+}

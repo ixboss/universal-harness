@@ -75,7 +75,7 @@ Verification-level distinction (never blur these):
 
 ### 1a-2. Automated suite — PASSING
 
-`node --test tests/*.test.mjs` — **187 tests, 187 pass, 0 fail, ~35s** (2026-10-11), no
+`node --test tests/*.test.mjs` — **244 tests, 244 pass, 0 fail, ~90s** (2026-10-16), no
 third-party test dependencies (`node:test` only). The fake dsh stub
 (`tests/fixtures/fake-dsh.mjs`) speaks the real SDK wire protocol with deterministic failure
 modes, so lifecycle behavior is testable offline. The current per-file inventory is in

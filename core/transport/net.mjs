@@ -434,9 +434,13 @@ export function connectNodeTransport({ host, port, pinnedCertSha256, connectTime
   }
 
   return new Promise((resolve, reject) => {
+    // TLS ServerName must be a hostname: Node 26+ throws when an IP literal is
+    // passed as servername, so only set SNI for a real name (SNI is pointless
+    // for an IP anyway — the pin is the trust decision here, not the name).
+    const sni = servername || (net.isIP(host) ? null : host);
     const socket = tls.connect({
       host, port,
-      servername: servername || host,
+      ...(sni ? { servername: sni } : {}),
       // Select the full-duplex envelope stream. Without an explicit offer a
       // client still gets this path (it is the protocol's primary surface),
       // but stating it keeps the choice honest and testable.

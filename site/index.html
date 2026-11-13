@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Universal Harness — a portable, cross-platform AI coding harness</title>
+<meta name="description" content="Universal Harness makes DeepSeek Harness run anywhere — a USB stick, a desktop, an Android phone — and be controllable from another machine over the LAN, with no cloud dependency." />
+<meta name="color-scheme" content="dark light" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236366f1'/%3E%3Cpath d='M9 20V12m7 8V9m7 11v-6' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+<style>
+  :root{
+    --bg:#0b0d12; --bg-2:#11141c; --panel:#151922; --panel-2:#1a1f2b;
+    --line:#242b3a; --line-2:#2e3648;
+    --fg:#e8ecf5; --fg-dim:#a8b2c6; --fg-mute:#76819a;
+    --brand:#6366f1; --brand-2:#8b5cf6; --accent:#22d3ee; --ok:#34d399; --warn:#fbbf24;
+    --radius:16px; --maxw:1080px;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Inter,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.65;-webkit-font-smoothing:antialiased}
+  a{color:inherit}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 22px}
+  .glow{position:fixed;inset:0;pointer-events:none;z-index:0;background:
+    radial-gradient(60% 45% at 12% -8%, rgba(99,102,241,.22), transparent 60%),
+    radial-gradient(50% 40% at 88% 0%, rgba(34,211,238,.14), transparent 60%);}
+  header.nav{position:sticky;top:0;z-index:20;backdrop-filter:blur(12px);background:rgba(11,13,18,.72);border-bottom:1px solid var(--line)}
+  .nav-in{display:flex;align-items:center;gap:16px;height:62px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:-.01em}
+  .brand svg{display:block}
+  .nav-links{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+  .nav-links a{padding:8px 12px;border-radius:10px;color:var(--fg-dim);text-decoration:none;font-size:14px}
+  .nav-links a:hover{color:var(--fg);background:var(--panel)}
+  main{position:relative;z-index:1}
+  section{padding:64px 0;border-bottom:1px solid var(--line)}
+  h1,h2,h3{letter-spacing:-.02em;line-height:1.15;margin:0}
+  h1{font-size:clamp(34px,6vw,60px);font-weight:800}
+  h2{font-size:clamp(22px,3.4vw,32px);font-weight:750;margin-bottom:14px}
+  h3{font-size:17px;font-weight:650;margin-bottom:6px}
+  p{margin:0 0 14px;color:var(--fg-dim)}
+  .lead{font-size:clamp(16px,2vw,19px);color:var(--fg-dim);max-width:62ch}
+  .grad{background:linear-gradient(100deg,var(--brand) 0%,var(--brand-2) 45%,var(--accent) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--accent);margin-bottom:16px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 4px rgba(52,211,153,.15)}
+  .badges{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 0}
+  .badges img{height:20px;display:block}
+  .cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px}
+  .btn{display:inline-flex;align-items:center;gap:9px;padding:12px 20px;border-radius:12px;text-decoration:none;
+    font-weight:600;font-size:15px;border:1px solid var(--line-2);background:var(--panel);color:var(--fg);
+    transition:transform .12s ease,background .12s ease,border-color .12s ease}
+  .btn:hover{transform:translateY(-1px);background:var(--panel-2);border-color:var(--brand)}
+  .btn.primary{background:linear-gradient(100deg,var(--brand),var(--brand-2));border-color:transparent;color:#fff;
+    box-shadow:0 10px 30px -12px rgba(99,102,241,.8)}
+  .btn.primary:hover{filter:brightness(1.08)}
+  .grid{display:grid;gap:16px}
+  .g3{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+  .g2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+  .card{background:linear-gradient(180deg,var(--panel),var(--bg-2));border:1px solid var(--line);border-radius:var(--radius);padding:20px}
+  .card:hover{border-color:var(--line-2)}
+  .card p{margin:0;font-size:14.5px}
+  .ico{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;margin-bottom:12px;
+    background:rgba(99,102,241,.14);border:1px solid rgba(99,102,241,.3);color:var(--brand-2)}
+  pre{margin:0;background:#0a0c11;border:1px solid var(--line);border-radius:14px;padding:16px 18px;overflow:auto;
+    font-family:var(--mono);font-size:13.5px;line-height:1.7;color:#d7dce8}
+  code{font-family:var(--mono);font-size:.92em}
+  pre .c{color:var(--fg-mute)}
+  pre .k{color:var(--accent)}
+  pre .s{color:var(--ok)}
+  table{width:100%;border-collapse:collapse;font-size:14.5px}
+  th,td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line)}
+  th{color:var(--fg);font-weight:650;font-size:13px;letter-spacing:.03em;text-transform:uppercase}
+  td{color:var(--fg-dim)}
+  tr:last-child td{border-bottom:none}
+  .pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid var(--line-2)}
+  .pill.ok{color:var(--ok);border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.1)}
+  .pill.warn{color:var(--warn);border-color:rgba(251,191,36,.4);background:rgba(251,191,36,.1)}
+  .pill.dim{color:var(--fg-mute)}
+  .note{border-left:3px solid var(--brand);background:var(--panel);border-radius:0 12px 12px 0;padding:14px 18px;color:var(--fg-dim);font-size:14.5px}
+  footer{padding:44px 0 60px;color:var(--fg-mute);font-size:14px}
+  footer a{color:var(--fg-dim)}
+  .fl{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+  ul.checks{list-style:none;padding:0;margin:0;display:grid;gap:9px}
+  ul.checks li{display:flex;gap:10px;align-items:flex-start;color:var(--fg-dim);font-size:14.5px}
+  ul.checks svg{flex:0 0 auto;margin-top:3px;color:var(--ok)}
+  @media (max-width:640px){section{padding:48px 0}.nav-links{display:none}}
+</style>
+</head>
+<body>
+<div class="glow"></div>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <span class="brand">
+      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="#6366f1"/>
+        <path d="M9 20V12m7 8V9m7 11v-6" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+      </svg>
+      Universal Harness
+    </span>
+    <nav class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#quickstart">Quick start</a>
+      <a href="#platforms">Platforms</a>
+      <a href="#bundles">Bundles</a>
+      <a href="#status">Status</a>
+      <a href="https://github.com/ixboss/universal-harness">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section>
+    <div class="wrap">
+      <span class="eyebrow"><span class="dot"></span> Open source · MIT · no cloud required</span>
+      <h1>Your AI coding harness,<br /><span class="grad">on any machine you own.</span></h1>
+      <p class="lead">
+        Universal Harness is a portable, cross-platform infrastructure layer that makes
+        <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> (<code>dsh</code>, MIT)
+        run anywhere — a USB stick, a desktop, an Android phone — and be controlled from another
+        machine over the local network. No account. No relay. No hosted database.
+      </p>
+      <div class="badges">
+        <img alt="license MIT" src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" />
+        <img alt="tests 244" src="https://img.shields.io/badge/tests-244%20passing-22c55e?style=flat-square" />
+        <img alt="platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Android-0ea5e9?style=flat-square" />
+        <img alt="runtime bundled" src="https://img.shields.io/badge/runtime-bundled%20Node%20%2B%20dsh-4f46e5?style=flat-square" />
+        <img alt="no cloud" src="https://img.shields.io/badge/cloud-not%20required-64748b?style=flat-square" />
+      </div>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/ixboss/universal-harness">
+          <svg width="17" height="17" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          Download on GitHub
+        </a>
+        <a class="btn" href="#quickstart">Quick start</a>
+        <a class="btn" href="https://github.com/ixboss/universal-harness/blob/main/docs/ARCHITECTURE.md">Read the architecture</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <h2>Built for machines that move</h2>
+      <p class="lead">Everything is relative-path, checksum-verified and offline-first — because the point is to carry your work, not to depend on a server.</p>
+      <div class="grid g3" style="margin-top:26px">
+        <div class="card"><div class="ico">◆</div><h3>Truly portable</h3><p>Relative paths only. No system Node, npm, Python or Git. No symlinks (exFAT-safe). Move the folder between Windows, Linux and macOS and your projects travel with it.</p></div>
+        <div class="card"><div class="ico">⛨</div><h3>LAN-first &amp; offline</h3><p>mDNS discovery, QR pairing and an encrypted, authenticated transport. Pairing binds the node's cryptographic identity into the payload, so a stolen token cannot be replayed by a different peer.</p></div>
+        <div class="card"><div class="ico">⧉</div><h3>Crash-consistent</h3><p>Task-state transitions and durable events commit atomically. Replay is cursor-based with snapshot fallback, so a client can never permanently infer a false task state.</p></div>
+        <div class="card"><div class="ico">⇄</div><h3>Node-authoritative tasks</h3><p>A task keeps running when the controller disconnects; missed events are replayed on reconnect.</p></div>
+        <div class="card"><div class="ico">⌘</div><h3>Remote control</h3><p>The <code>uh connect</code> CLI and the <code>core/client</code> library drive any node over the LAN — pair, inspect projects, start tasks, replay events.</p></div>
+        <div class="card"><div class="ico">⚿</div><h3>Credentials never plaintext</h3><p>Secrets route to device-local secure storage (Windows DPAPI) and never into the portable tree; platforms without secure storage fail explicitly instead of degrading.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="quickstart">
+    <div class="wrap">
+      <h2>Quick start</h2>
+      <p class="lead">Clone, launch with the bundled runtime, and check the machine. Nothing global gets installed.</p>
+      <div class="grid g2" style="margin-top:26px">
+        <div>
+<pre><span class="c"># 1 — get it</span>
+git clone https://github.com/ixboss/universal-harness.git
+<span class="k">cd</span> universal-harness
+
+<span class="c"># 2 — launch with the BUNDLED runtime</span>
+./bin/UniversalHarness.cmd      <span class="c"># Windows</span>
+./bin/UniversalHarness.sh       <span class="c"># Linux / macOS</span>
+
+<span class="c"># 3 — verify, then run</span>
+uh setup                        <span class="c"># download + verify runtime + dsh</span>
+uh doctor                       <span class="c"># environment / runtime / workspace</span>
+uh exec <span class="s">"summarise this repo"</span></pre>
+        </div>
+        <div>
+<pre><span class="c"># move a workspace to another machine</span>
+uh export --out ./backup.uhbundle
+uh export verify ./backup.uhbundle
+uh import --bundle ./backup.uhbundle
+
+<span class="c"># remote control over the LAN</span>
+uh serve                        <span class="c"># run a node</span>
+uh pair                         <span class="c"># mint a pairing payload</span>
+uh connect status               <span class="c"># from another machine</span></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="platforms">
+    <div class="wrap">
+      <h2>Platform support</h2>
+      <p class="lead">Honest by construction: a row only advances when a real test produces evidence.</p>
+      <table style="margin-top:22px">
+        <thead><tr><th>Platform</th><th>Architecture</th><th>Role</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Windows</td><td>x64</td><td>Execution node</td><td><span class="pill ok">Smoke-executed 14/15</span></td></tr>
+          <tr><td>Linux</td><td>x64</td><td>Execution node</td><td><span class="pill dim">Not tested — no host</span></td></tr>
+          <tr><td>macOS</td><td>Apple Silicon</td><td>Execution node</td><td><span class="pill dim">Not tested — no host</span></td></tr>
+          <tr><td>Android</td><td>arm64</td><td>Execution node (PRoot)</td><td><span class="pill ok">Real-device verified</span></td></tr>
+        </tbody>
+      </table>
+      <div class="note" style="margin-top:20px">
+        Windows x64 runs the full chain end to end; the only failing stage is model completion,
+        blocked by the provider account's own quota — reported as a failure, not papered over.
+      </div>
+    </div>
+  </section>
+
+  <section id="bundles">
+    <div class="wrap">
+      <h2>Portable workspace bundles</h2>
+      <p class="lead">Carry a workspace between machines as a plain directory. No archive, no extractor to trust, no cloud.</p>
+      <div class="grid g2" style="margin-top:26px">
+        <div>
+          <ul class="checks">
+            <li><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-6.5 6.5a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.75 10.19l5.97-5.97a.75.75 0 0 1 1.06 0Z"/></svg><span><b>Verify-then-commit.</b> Every file's SHA-256 and the manifest checksum are checked before anything is written.</span></li>
+            <li><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-6.5 6.5a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.75 10.19l5.97-5.97a.75.75 0 0 1 1.06 0Z"/></svg><span><b>Never overwrites.</b> A target that already differs aborts the whole import with a per-file report.</span></li>
+            <li><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-6.5 6.5a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.75 10.19l5.97-5.97a.75.75 0 0 1 1.06 0Z"/></svg><span><b>Nothing sensitive travels.</b> No secrets, logs, runtime, event log or backups — enforced by an allowlist, not by convention.</span></li>
+            <li><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-6.5 6.5a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.75 10.19l5.97-5.97a.75.75 0 0 1 1.06 0Z"/></svg><span><b>Hostile bundles refused.</b> Path traversal, symlinks, case/Unicode collisions and reserved names are all rejected.</span></li>
+          </ul>
+        </div>
+        <div>
+<pre><span class="c"># on the source machine</span>
+uh export --out /media/usb/ws.uhbundle
+
+<span class="c"># on the target machine</span>
+uh export verify /media/usb/ws.uhbundle
+uh import --bundle /media/usb/ws.uhbundle
+
+<span class="c"># dry-run first, if you like</span>
+uh import --bundle /media/usb/ws.uhbundle --dry-run</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="status">
+    <div class="wrap">
+      <h2>Status &amp; verification</h2>
+      <p class="lead">This project does not blur "planned", "tested" and "verified".</p>
+      <div class="grid g3" style="margin-top:26px">
+        <div class="card"><h3><span class="pill ok">Implemented</span></h3><p>Phases 0–3C: architecture and schemas, the portable desktop core, the Universal Protocol v1 node server, and the Android execution node with its controller surface.</p></div>
+        <div class="card"><h3><span class="pill ok">Implemented</span></h3><p>Phase 5 stages S1–S3: safety primitives plus portable workspace export/import bundles.</p></div>
+        <div class="card"><h3><span class="pill warn">Outstanding</span></h3><p>Phase 5 S4 (Android bundle leg), Phase 6 hardening soak, and the update system. Linux/macOS remain untested — no host.</p></div>
+      </div>
+      <div class="note" style="margin-top:22px">
+        244 automated tests pass on Windows (<code>node --test tests/*.test.mjs</code>); the Android JVM suite is
+        270/270. Nothing is marked <em>Verified</em> without evidence recorded in the repository's compatibility matrix.
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap fl">
+    <span>Universal Harness — new code licensed <a href="https://github.com/ixboss/universal-harness/blob/main/LICENSE">MIT</a>. Bundled components carry their own licences.</span>
+    <span>
+      <a href="https://github.com/ixboss/universal-harness">Repository</a> ·
+      <a href="https://github.com/ixboss/universal-harness/blob/main/docs/ROADMAP.md">Roadmap</a> ·
+      <a href="https://github.com/ixboss/universal-harness/blob/main/docs/ARCHITECTURE.md">Architecture</a>
+    </span>
+  </div>
+</footer>
+</body>
+</html>

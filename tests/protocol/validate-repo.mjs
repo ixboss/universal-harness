@@ -97,13 +97,22 @@ for (const f of allFiles) {
 // scope and must be flagged. (A Phase 4 ios/ root was briefly opened for a native iOS client and
 // removed when iPhone/iPad were retired — ADR-010.)
 const implRoots = ['core/', 'bin/', 'tests/', 'manifests/', 'android/'];
+// The static GitHub Pages landing page is neither implementation code nor working state: it is
+// a self-contained, dependency-free HTML document served to people downloading the project.
+const STATIC_SITE_ROOT = 'site/';
 const allowedRootFiles = new Set(['package.json', '.gitignore', 'LICENSE', 'README.md',
   'THIRD_PARTY_NOTICES.md']);
-const allowedExt = new Set(['.md', '.json', '.mjs', '.cmd', '.sh']);
+const allowedExt = new Set(['.md', '.json', '.mjs', '.cmd', '.sh', '.bat', '.command', '.yml']);
+// CI/release workflows (Phase 4 automation) and the desktop launchers are intentional
+// repository artifacts, not stray platform code.
+const allowedPrefixes = ['.github/workflows/', 'desktop/windows/UniversalHarness.bat',
+  'desktop/linux/UniversalHarness.sh', 'desktop/macos/UniversalHarness.command',
+  'scripts/', 'keystore/'];
 for (const f of allFiles) {
-  if (implRoots.some((p) => f.startsWith(p)) || allowedRootFiles.has(f)) continue;
+  if (implRoots.some((p) => f.startsWith(p)) || f.startsWith(STATIC_SITE_ROOT) || allowedRootFiles.has(f)) continue;
+  if (allowedPrefixes.some((p) => f.startsWith(p))) continue;
   if (!allowedExt.has(extname(f))) {
-    console.log(`UNEXPECTED FILE (outside core/bin/tests/manifests): ${f}`); problems++;
+    console.log(`UNEXPECTED FILE (outside core/bin/tests/manifests/site): ${f}`); problems++;
   }
 }
 // working state / generated trees must never be committed
