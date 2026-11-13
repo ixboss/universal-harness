@@ -206,8 +206,10 @@ test('resolvePortable is LEXICAL: a symlink out of the root is NOT caught here',
 
 test('assertSafeRelativePath: separators normalise but a POSIX literal backslash survives', () => {
   const BS = String.fromCharCode(92);
-  assert.equal(assertSafeRelativePath(`data${BS}projects${BS}x`), 'data/projects/x');
-  if (process.platform !== 'win32') {
+  if (process.platform === 'win32') {
+    // On Windows the separator is '\', so backslashes normalise to '/'.
+    assert.equal(assertSafeRelativePath(`data${BS}projects${BS}x`), 'data/projects/x');
+  } else {
     // On POSIX the separator is '/', so a backslash is an ordinary filename char.
     assert.equal(assertSafeRelativePath('weird' + BS + 'name'), 'weird' + BS + 'name');
   }
