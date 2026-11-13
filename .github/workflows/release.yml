@@ -45,7 +45,8 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - uses: android-actions/setup-android@v3
+      # ubuntu-latest ships a preinstalled Android SDK with licenses accepted;
+      # AGP resolves it via ANDROID_HOME (see ci.yml for the rationale).
       - name: Assemble signed release APK
         working-directory: android
         env:

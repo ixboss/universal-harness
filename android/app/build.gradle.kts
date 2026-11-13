@@ -1,3 +1,4 @@
+import java.io.File
 import java.util.Properties
 import org.gradle.api.tasks.Sync
 
@@ -31,7 +32,8 @@ val uploadKeyPassword = providers.environmentVariable("UH_KEY_PASSWORD").orNull
 // on demand with keytool from the JDK running Gradle (no binary committed).
 val fallbackKeystore = rootProject.file("keystore/fallback-release.jks")
 if (!fallbackKeystore.isFile) {
-    val keytool = java.io.File(System.getProperty("java.home"), if (org.gradle.internal.os.OperatingSystem.current().isWindows) "bin/keytool.exe" else "bin/keytool")
+    val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+    val keytool = File(System.getProperty("java.home"), if (isWindows) "bin/keytool.exe" else "bin/keytool")
     if (keytool.isFile) {
         fallbackKeystore.parentFile.mkdirs()
         val proc = ProcessBuilder(
@@ -117,10 +119,10 @@ android {
     signingConfigs {
         create("upload") {
             if (hasUploadSigning) {
-                storeFile = if (java.io.File(checkNotNull(uploadStorePath)).isAbsolute) {
-                    java.io.File(checkNotNull(uploadStorePath))
+                storeFile = if (File(checkNotNull(uploadStorePath)).isAbsolute) {
+                    File(checkNotNull(uploadStorePath))
                 } else {
-                    rootProject.file(uploadStorePath!!)
+                    rootProject.file(checkNotNull(uploadStorePath))
                 }
                 storePassword = checkNotNull(uploadStorePassword)
                 keyAlias = checkNotNull(uploadKeyAlias)
