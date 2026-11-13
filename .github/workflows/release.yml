@@ -81,9 +81,7 @@ jobs:
       - name: Move artifacts into dist/
         run: |
           mkdir -p dist
-          find dist-staged -name '*.zip' -o -name '*.tar.gz' -o -name '*.apk' | while read -r f; do
-            cp "$f" dist/
-          done
+          find dist-staged \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.apk' \) -exec cp {} dist/ \;
           ls -la dist/
       - name: Generate SHA256SUMS.txt and publish
         env:

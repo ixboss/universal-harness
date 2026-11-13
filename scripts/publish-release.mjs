@@ -87,7 +87,7 @@ async function main() {
     'release', 'create', TAG,
     '--repo', REPO_SLUG,
     '--title', `Universal Harness v${VERSION}`,
-    '--draft', String(opts.draft),
+    ...(opts.draft ? ['--draft'] : []),
     '--generate-notes',
     ...(opts.notes ? ['--notes-file', opts.notes] : []),
     ...files,
