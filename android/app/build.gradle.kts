@@ -237,7 +237,7 @@ tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
     .configureEach { dependsOn(prepareBundledAgentAssets, prepareUhJsAssets) }
 
 tasks.matching { it.name.contains("lint", ignoreCase = true) }
-    .configureEach { dependsOn(prepareBundledAgentAssets) }
+    .configureEach { dependsOn(prepareBundledAgentAssets, prepareUhJsAssets) }
 
 tasks.matching { it.name.contains("Offline") && it.name.contains("lint", ignoreCase = true) }
     .configureEach { dependsOn(prepareOfflineRuntimeAssets) }
