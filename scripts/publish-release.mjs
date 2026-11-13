@@ -55,7 +55,7 @@ async function main() {
 
   // Collect release artifacts from dist/ + the Android APK if built.
   const files = fs.readdirSync(opts.out)
-    .filter((f) => f.endsWith('.zip') || f.endsWith('.tar.gz'))
+    .filter((f) => f.endsWith('.zip') || f.endsWith('.tar.gz') || f.endsWith('.apk'))
     .map((f) => path.join(opts.out, f));
   if (fs.existsSync(ANDROID_ARTIFACT)) {
     const dest = path.join(opts.out, `UniversalHarness-v${VERSION}-android.apk`);
