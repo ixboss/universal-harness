@@ -61,8 +61,17 @@ async function main() {
     const dest = path.join(opts.out, `UniversalHarness-v${VERSION}-android.apk`);
     fs.copyFileSync(ANDROID_ARTIFACT, dest);
     files.push(dest);
-  } else {
-    process.stdout.write(`note: no Android APK at android/app/build/outputs/apk/online/release (skipping)\n`);
+  }
+  // An APK staged by CI (release.yml) keeps its gradle name — normalise it.
+  for (const f of [...files]) {
+    if (f.endsWith('.apk') && path.basename(f) !== `UniversalHarness-v${VERSION}-android.apk`) {
+      const dest = path.join(opts.out, `UniversalHarness-v${VERSION}-android.apk`);
+      fs.renameSync(f, dest);
+      files[files.indexOf(f)] = dest;
+    }
+  }
+  if (!files.some((f) => f.endsWith('.apk'))) {
+    process.stdout.write(`note: no Android APK found (skipping)\n`);
   }
   if (!files.length) fail(`no release artifacts (.zip/.tar.gz) found in ${opts.out}`);
 
@@ -82,8 +91,9 @@ async function main() {
     return;
   }
 
-  // Publish via gh.
-  const gh = spawnSync('gh', [
+  // Publish via gh — idempotent: create the release, or upload into the
+  // existing one (--clobber overwrites stale assets from a re-run).
+  const create = spawnSync('gh', [
     'release', 'create', TAG,
     '--repo', REPO_SLUG,
     '--title', `Universal Harness v${VERSION}`,
@@ -92,7 +102,11 @@ async function main() {
     ...(opts.notes ? ['--notes-file', opts.notes] : []),
     ...files,
   ], { stdio: 'inherit' });
-  if (gh.status !== 0) fail(`gh release create failed (exit ${gh.status})`);
+  if (create.status !== 0) {
+    process.stdout.write(`release ${TAG} already exists — uploading/clobbering assets\n`);
+    const upload = spawnSync('gh', ['release', 'upload', TAG, '--repo', REPO_SLUG, '--clobber', ...files], { stdio: 'inherit' });
+    if (upload.status !== 0) fail(`gh release upload failed (exit ${upload.status})`);
+  }
   process.stdout.write(`published ${TAG} with ${files.length} artifact(s)\n`);
 }
 
