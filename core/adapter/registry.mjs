@@ -313,7 +313,7 @@ const SDK_NOTIFICATIONS_FALLBACK = ['subagent.started', 'subagent.finished'];
  * and initialize() verify reachability instead, and the prompt's completion
  * settles the task (exit code 0) exactly like a child exit.
  */
-export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, label = 'openai-compatible', log = consoleShim(), timeouts = {} }) {
+export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, allowInsecureRemote = false, label = 'openai-compatible', log = consoleShim(), timeouts = {} }) {
   log = log || consoleShim();
   const T = { ...DEFAULT_TIMEOUTS, ...timeouts };
   const { on, emit } = makeEmitter(log);
@@ -321,6 +321,26 @@ export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, label = 'opena
   let exited = null;            // {code, signal} once the current prompt settled
   let lastError = null;
   const base = String(baseUrl || '').replace(/\/+$/, '');
+
+  // Audit 1.4: an API key must never be sent to a plain-HTTP non-loopback
+  // endpoint. Loopback and https are fine; anything else needs the explicit
+  // adapter option `allowInsecureRemote: true` (operator opt-in, e.g. a LAN
+  // llama.cpp box), checked here — before any request is ever made.
+  {
+    let u = null;
+    try { u = new URL(base); } catch { /* invalid URL: fetch will fail; not this check's job */ }
+    if (u && u.protocol === 'http:') {
+      const host = u.hostname.toLowerCase();
+      const loopback = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
+        || /^127\.\d+\.\d+\.\d+$/.test(host) || host.endsWith('.localhost');
+      if (!loopback && !allowInsecureRemote) {
+        throw new UhError(ERR.DSH_START_FAILED,
+          `${label}: refusing plain-HTTP non-loopback baseUrl "${base}" — set allowInsecureRemote: true on the adapter to send credentials there`,
+          { baseUrl: base },
+          'Use https, or a loopback address, or explicitly allow the insecure endpoint in the adapter config.');
+      }
+    }
+  }
 
   function headers() {
     const h = { 'content-type': 'application/json', accept: 'text/event-stream' };
@@ -380,30 +400,37 @@ export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, label = 'opena
         const decoder = new TextDecoder();
         let buf = '';
         let done = false;
+        const handleLine = (line) => {
+          if (!line || !line.startsWith('data:')) return false;
+          const data = line.slice(5).trim();
+          if (data === '[DONE]') return true;
+          try {
+            const evt = JSON.parse(data);
+            const delta = evt?.choices?.[0]?.delta?.content;
+            if (typeof delta === 'string' && delta.length) {
+              output += delta;
+              emit('event', { delta });
+            }
+            const reasoning = evt?.choices?.[0]?.delta?.reasoning_content ?? evt?.choices?.[0]?.delta?.reasoning;
+            if (typeof reasoning === 'string' && reasoning.length) emit('reasoning', { reasoning });
+          } catch {
+            emit('event', { raw: data.slice(0, 2000) });
+          }
+          return false;
+        };
         for await (const chunk of res.body) {
           buf += decoder.decode(chunk, { stream: true });
           let idx;
           while ((idx = buf.indexOf('\n')) >= 0) {
             const line = buf.slice(0, idx).trim();
             buf = buf.slice(idx + 1);
-            if (!line.startsWith('data:')) continue;
-            const data = line.slice(5).trim();
-            if (data === '[DONE]') { done = true; break; }
-            try {
-              const evt = JSON.parse(data);
-              const delta = evt?.choices?.[0]?.delta?.content;
-              if (typeof delta === 'string' && delta.length) {
-                output += delta;
-                emit('event', { delta });
-              }
-              const reasoning = evt?.choices?.[0]?.delta?.reasoning_content ?? evt?.choices?.[0]?.delta?.reasoning;
-              if (typeof reasoning === 'string' && reasoning.length) emit('reasoning', { reasoning });
-            } catch {
-              emit('event', { raw: data.slice(0, 2000) });
-            }
+            if (handleLine(line)) { done = true; break; }
           }
           if (done) break;
         }
+        // Audit 1.4: a server that ends the stream without a final newline
+        // would otherwise silently drop its trailing buffered line.
+        if (!done && buf.trim()) handleLine(buf.trim());
       } catch (e) {
         lastError = e;
         emit('stderr', `${label}: ${e.message}`);

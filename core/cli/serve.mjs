@@ -245,6 +245,8 @@ function adapterOptionsFor(name, a, apiKeys = {}) {
     // Audit 1.2: 'stdin' selects the prompt-over-stdin path for CLIs that
     // support it; the default 'arg' rejects flag-like prompts.
     promptMode: section?.promptMode === 'stdin' ? 'stdin' : null,
+    // Audit 1.4: explicit operator opt-in for plain-HTTP non-loopback endpoints.
+    allowInsecureRemote: section?.allowInsecureRemote === true,
     apiKeyRef: section?.apiKeyRef || null,
   };
 }

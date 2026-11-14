@@ -257,3 +257,49 @@ test('audit 1.3: cancel takes down the whole process tree (grandchild included)'
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('audit 1.4: plain-HTTP non-loopback baseUrl is refused without allowInsecureRemote', () => {
+  assert.throws(
+    () => createNamedAdapter('openai-compatible', {
+      baseUrl: 'http://192.168.1.50:11434/v1', model: 'm', apiKey: 'sk-secret', log: null,
+    }),
+    (e) => /allowInsecureRemote/.test(e.message),
+    'credentials must never reach a plain-HTTP remote by default');
+  // Explicit opt-in constructs the adapter.
+  const ok = createNamedAdapter('omniroute', {
+    baseUrl: 'http://192.168.1.50:8090/v1', model: 'm', apiKey: 'sk-secret',
+    allowInsecureRemote: true, log: null,
+  });
+  assert.equal(ok.kind, 'http-sse');
+});
+
+test('audit 1.4: a trailing SSE line with no final newline is flushed, not dropped', async () => {
+  const server = http.createServer((req, res) => {
+    if (/\/chat\/completions$/.test(req.url)) {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.write('data: {"choices":[{"delta":{"content":"first "}}]}\n');
+      // Stream ends with a buffered, unterminated final line.
+      res.end('data: {"choices":[{"delta":{"content":"last"}}]}');
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"data":[]}');
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const { port } = server.address();
+  try {
+    const adapter = createNamedAdapter('openai-compatible', {
+      baseUrl: `http://127.0.0.1:${port}/v1`, model: 'm', log: null,
+    });
+    await adapter.launch();
+    const chunks = [];
+    adapter.on('event', (p) => chunks.push(p.delta || ''));
+    await new Promise((resolve, reject) => {
+      adapter.on('exit', (info) => { try { assert.equal(info.code, 0); resolve(); } catch (e) { reject(e); } });
+      adapter.prompt({ text: 'hi' });
+    });
+    assert.equal(chunks.join(''), 'first last', 'the unterminated trailing data line is surfaced');
+  } finally {
+    server.close();
+  }
+});
