@@ -41,11 +41,15 @@ export function createSecureStorage({ root, p }) {
    * Any failure becomes SECURE_STORAGE_UNAVAILABLE with the PowerShell-free
    * reason — never a trace of the secret itself.
    */
-  function runPowerShell(script, input) {
+  function runPowerShell(script, input, { env = {} } = {}) {
     return new Promise((resolve, reject) => {
       const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe'],
+        // Audit 1.5: values the script needs (file paths) arrive through the
+        // environment, never interpolated into the script text — a path with
+        // an apostrophe (e.g. C:\Users\O'Brien\…) would break the quoting.
+        env: { ...process.env, ...env },
       });
       let out = '';
       child.stdout.on('data', (c) => { out += c; });
@@ -74,8 +78,12 @@ export function createSecureStorage({ root, p }) {
       const input = Buffer.from(value, 'utf8').toString('base64');
       // DPAPI seal (CurrentUser scope): the blob is only reversible by this
       // Windows user on this machine.
-      const dpapiScript = `$ErrorActionPreference='Stop'; $b=[Convert]::FromBase64String([Console]::In.ReadToEnd()); $plain=[Text.Encoding]::UTF8.GetString($b); $s=ConvertTo-SecureString $plain -AsPlainText -Force; ConvertFrom-SecureString $s | Out-File -FilePath '${tmp}' -Encoding ASCII -NoNewline`;
-      await runPowerShell(dpapiScript, input).catch((e) => { fs.rmSync(tmp, { force: true }); throw e; });
+      // Audit 1.5: the temp path is passed through the environment, not
+      // interpolated into the script (single-quoted PowerShell strings cannot
+      // contain a literal ' — an apostrophe in the user profile path would
+      // break the command).
+      const dpapiScript = `$ErrorActionPreference='Stop'; $b=[Convert]::FromBase64String([Console]::In.ReadToEnd()); $plain=[Text.Encoding]::UTF8.GetString($b); $s=ConvertTo-SecureString $plain -AsPlainText -Force; ConvertFrom-SecureString $s | Out-File -FilePath $env:UH_DPAPI_TMP -Encoding ASCII -NoNewline`;
+      await runPowerShell(dpapiScript, input, { env: { UH_DPAPI_TMP: tmp } }).catch((e) => { fs.rmSync(tmp, { force: true }); throw e; });
       fs.renameSync(tmp, fileFor(name));
     } else {
       throw new UhError(ERR.SECURE_STORAGE_UNAVAILABLE, `secret backend '${backend}' cannot store secrets`, {},

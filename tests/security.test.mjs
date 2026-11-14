@@ -144,3 +144,19 @@ test('audit 1.1: the task environment allowlist drops unrelated secrets, keeps r
   assert.equal('GITHUB_TOKEN' in allow, false);
   assert.equal('STRIPE_KEY' in allow, false);
 });
+
+test('audit 1.5: DPAPI store works with an apostrophe in the device path (no PowerShell quoting break)', async () => {
+  if (!isWindows) { test.skip('DPAPI backend is Windows-only'); return; }
+  // Audit 1.5: the temp file path used to be interpolated inside a
+  // single-quoted PowerShell string, so a path like C:\Users\O'Brien\… broke
+  // the command. It now travels through an environment variable.
+  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'uh-obrien-'));
+  try {
+    const p = { data: path.join(root, 'data'), device: path.join(root, "O'Brien's-device") };
+    const storage = createSecureStorage({ root, p });
+    await storage.set('provider-key', SECRET);
+    assert.equal(await storage.get('provider-key'), SECRET);
+    await storage.remove('provider-key');
+    assert.equal(await storage.get('provider-key'), null);
+  } finally { await fs.promises.rm(root, { recursive: true, force: true }); }
+});
