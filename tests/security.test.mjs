@@ -12,6 +12,7 @@ import { redact, redactObject, describeEnvSafe } from '../core/errors/mod.mjs';
 import { createSecureStorage } from '../core/secrets/mod.mjs';
 import { createConfig } from '../core/config/mod.mjs';
 import { isWindows } from '../core/platform/mod.mjs';
+import { taskEnvAllowlist } from '../core/executor/mod.mjs';
 
 // Deliberately non-real inputs to the redaction tests below.
 const SECRET = 'sk-deadbeefcafebabe1234567890abcdef'; // uh-secret-fixture
@@ -119,3 +120,27 @@ function walk(dir) {
   }
   return out;
 }
+
+test('audit 1.1: the task environment allowlist drops unrelated secrets, keeps runtime + provider vars', () => {
+  const allow = taskEnvAllowlist({
+    PATH: '/usr/bin', SystemRoot: 'C:\Windows', COMSPEC: 'cmd.exe',
+    HOME: '/home/op', TEMP: '/tmp',
+    DSH_HOME: '/home/op/.dsh',
+    HTTP_PROXY: 'http://proxy:8080', NO_PROXY: 'localhost',
+    DEEPSEEK_API_KEY: 'sk-provider', UH_ADAPTER: 'deepseek', UH_TUNE_X: '1',
+    // Unrelated operator secrets must never reach a task child:
+    AWS_SECRET_ACCESS_KEY: 'aws-secret', MY_DB_PASSWORD: 'hunter2',
+    GITHUB_TOKEN: 'ghp_x', STRIPE_KEY: 'sk_live_x',
+  });
+  assert.equal(allow.PATH, '/usr/bin');
+  assert.equal(allow.SystemRoot, 'C:\Windows');
+  assert.equal(allow.DSH_HOME, '/home/op/.dsh');
+  assert.equal(allow.HTTP_PROXY, 'http://proxy:8080');
+  assert.equal(allow.DEEPSEEK_API_KEY, 'sk-provider');
+  assert.equal(allow.UH_ADAPTER, 'deepseek');
+  assert.equal(allow.UH_TUNE_X, '1');
+  assert.equal('AWS_SECRET_ACCESS_KEY' in allow, false);
+  assert.equal('MY_DB_PASSWORD' in allow, false);
+  assert.equal('GITHUB_TOKEN' in allow, false);
+  assert.equal('STRIPE_KEY' in allow, false);
+});

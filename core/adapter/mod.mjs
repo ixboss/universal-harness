@@ -198,12 +198,13 @@ export function createAdapter({ rm, log = consoleShim(), timeouts = {}, dshHome,
       'Run `uh setup` to install the pinned runtime.');
 
     const argv = [entry, '--profile', 'sdk'];
+    // Audit 1.1: when a full environment is supplied (the executor factory
+    // passes an allowlisted one), use it verbatim — never merged with
+    // process.env, which carries operator-wide secrets. An empty env keeps
+    // the old inherit-parent behaviour for standalone construction.
     const childEnv = {
-      ...process.env,
+      ...(env && Object.keys(env).length > 0 ? env : process.env),
       DSH_HOME: resolvedDshHome,
-      // Keep dsh's own stdout clean for protocol frames (its sdk profile loads
-      // no stdout logger; we enforce by not enabling debug on stdout).
-      ...env,
     };
     log.info('launching dsh sdk', { node: path.basename(nodeBin), profile: 'sdk', dshHome: redact(resolvedDshHome) });
 

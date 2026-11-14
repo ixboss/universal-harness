@@ -247,7 +247,15 @@ export function createNodeServer({
   }
 
   async function runTask(task, connection) {
-    const exec = executorFactory();
+    // Audit 1.1: a task's harness runs inside its project directory — never
+    // at the portable root. The directory comes from openProject, which is
+    // already containment-checked to live under data/projects/. Tasks with no
+    // (or unknown) project fall back to the contained projects directory.
+    const opened = task.projectId ? workspace.openProject(task.projectId) : null;
+    const taskCwd = opened?.ok
+      ? opened.workspacePath
+      : (p.projects || path.join(root, 'data', 'projects'));
+    const exec = executorFactory({ cwd: taskCwd });
     const handle = exec.start({
       taskId: task.taskId,
       sessionId: task.sessionId,

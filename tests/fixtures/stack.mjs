@@ -49,8 +49,8 @@ export function disposeStack({ root }) {
  * A paired in-process client + server over a memory transport pair, ready to
  * send authorized requests. `deviceKey` is the client's long-lived keypair.
  */
-export async function buildPairedSession(stack, { scopes = SCOPES } = {}) {
-  const server = createNodeServer({
+export async function buildPairedSession(stack, { scopes = SCOPES, server = null } = {}) {
+  server = server || createNodeServer({
     root: stack.root, p: stack.p,
     identity: stack.identity, auth: stack.auth, events: stack.events,
     workspace: stack.workspace, executorFactory: stack.executorFactory,

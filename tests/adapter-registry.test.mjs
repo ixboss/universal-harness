@@ -10,6 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
 import { listAdapters, normalizeAdapterName, createNamedAdapter } from '../core/adapter/registry.mjs';
+import { taskEnvAllowlist } from '../core/executor/mod.mjs';
 import { createAdapterExecutor } from '../core/executor/mod.mjs';
 
 test('registry: five adapters, aliases resolve, unknown rejected', () => {
@@ -143,4 +144,40 @@ test('executor wrapper drives a registry adapter end to end', async () => {
   assert.ok(live.some((f) => f.kind === 'task.output' && f.chunk && f.chunk.includes('ok')));
   server.closeAllConnections();
   server.close();
+});
+
+test('audit 1.1: the task child sees the allowlisted env, not the node process.env', async () => {
+  // End-to-end acceptance for audit 1.1: the adapter spawns with the given
+  // environment verbatim, so an unrelated secret in the node's process.env
+  // must be invisible to the harness child while required vars pass through.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'uh-env-'));
+  const stub = path.join(dir, 'echo-env.mjs');
+  fs.writeFileSync(stub, [
+    "console.log('secret=' + (process.env.MY_DB_PASSWORD === undefined ? 'ABSENT' : 'VISIBLE'));",
+    "console.log('path=' + (process.env.PATH ? 'PRESENT' : 'ABSENT'));",
+    "console.log('uh=' + (process.env.UH_ADAPTER === 'deepseek' ? 'PRESENT' : 'ABSENT'));",
+    '',
+  ].join('\n'));
+  try {
+    const adapter = createNamedAdapter('claude-code', {
+      command: process.execPath,
+      args: [stub],
+      env: taskEnvAllowlist({ PATH: process.env.PATH, UH_ADAPTER: 'deepseek', MY_DB_PASSWORD: 'hunter2' }),
+      log: null,
+    });
+    await adapter.launch();
+    const chunks = [];
+    adapter.on('event', (p) => chunks.push(p.delta || ''));
+    await new Promise((resolve, reject) => {
+      adapter.on('exit', (info) => { try { assert.equal(info.code, 0); resolve(); } catch (e) { reject(e); } });
+      adapter.prompt({ text: 'hi' });
+    });
+    const out = chunks.join('');
+    assert.match(out, /secret=ABSENT/, 'the unrelated secret must not reach the child');
+    assert.match(out, /path=PRESENT/, 'PATH passes through');
+    assert.match(out, /uh=PRESENT/, 'UH_* config passes through');
+    await adapter.cancel();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

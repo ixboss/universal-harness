@@ -167,6 +167,17 @@ function makeEmitter(log) {
 
 function noop() {}
 
+/**
+ * Audit 1.1: spawn children with the environment they are given, verbatim —
+ * never merged with process.env, which carries operator-wide secrets. An
+ * empty/absent env inherits the parent (Node's default) so standalone adapter
+ * construction keeps working; the executor factory passes a full allowlisted
+ * environment (taskEnvAllowlist) on the task path.
+ */
+function spawnEnv(env) {
+  return env && Object.keys(env).length > 0 ? env : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Resilience chain
 // ---------------------------------------------------------------------------
@@ -422,7 +433,7 @@ export function createCliProcessAdapter({ command, args, promptMode = 'arg', lab
     launch: async () => {
       if (verified) return;
       await new Promise((resolve, reject) => {
-        const probe = spawn(command, ['--version'], { cwd: cwd || undefined, env: { ...process.env, ...env }, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+        const probe = spawn(command, ['--version'], { cwd: cwd || undefined, env: spawnEnv(env), shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
         let out = '';
         probe.stdout?.on('data', (d) => { out += d; });
         const timer = setTimeout(() => { try { probe.kill(); } catch {} reject(new UhError(ERR.DSH_START_FAILED, `${command} --version did not answer within ${T.startup}ms`, { command })); }, T.startup);
@@ -448,7 +459,7 @@ export function createCliProcessAdapter({ command, args, promptMode = 'arg', lab
       const fullArgs = promptMode === 'arg' ? [...args, String(text || '')] : args;
       child = spawn(command, fullArgs, {
         cwd: cwd || undefined,
-        env: { ...process.env, ...env },
+        env: spawnEnv(env),
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
         // Own process group on POSIX so cancel() can take down grandchildren

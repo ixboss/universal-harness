@@ -26,7 +26,7 @@ import {
   createStreamTransport,
 } from '../../core/transport/mod.mjs';
 import { createNetworkNodeListener, createLoopbackNodeListener } from '../../core/transport/net.mjs';
-import { createDshExecutor, createAdapterExecutor } from '../../core/executor/mod.mjs';
+import { createDshExecutor, createAdapterExecutor, taskEnvAllowlist } from '../../core/executor/mod.mjs';
 import { normalizeAdapterName, adapterChainFromConfig, createResilientAdapter } from '../../core/adapter/registry.mjs';
 import { createRuntimeManager } from '../../core/runtime/mod.mjs';
 import { createSecureStorage } from '../../core/secrets/mod.mjs';
@@ -179,21 +179,27 @@ export function resolveAdapterName(args, config) {
  * adapter executor with per-harness settings from config + env. When
  * `adapter.harnessChain` lists fallbacks, the adapter itself becomes a
  * resilient chain: launch-time failures fall through to the next harness.
+ *
+ * The factory takes a per-task context `{ cwd }` (audit 1.1): the server
+ * resolves the task's project directory and tasks run there, not at the
+ * portable root. The child environment is a strict allowlist — never the
+ * node's full process.env (docs/THREAT-MODEL.md T-1).
  */
 export function buildExecutorFactory({ adapterName, config, runtimeManager, root, log, apiKeys = {} }) {
   const a = config?.adapter || {};
   const chain = adapterChainFromConfig(adapterName, config);
   const resolveOptions = (name) => adapterOptionsFor(name, a, apiKeys);
   const useChain = chain.length > 1;
+  const taskEnv = taskEnvAllowlist(process.env);
 
-  return () => {
+  return ({ cwd } = {}) => {
     if (!useChain && adapterName === 'deepseek') {
       return createDshExecutor({
         rm: runtimeManager,
         log,
         dshHome: process.env.DSH_HOME || null,
-        cwd: root,
-        env: process.env,
+        cwd: cwd || root,
+        env: taskEnv,
       });
     }
     const name = adapterName;
@@ -202,8 +208,8 @@ export function buildExecutorFactory({ adapterName, config, runtimeManager, root
       rm: runtimeManager,
       log,
       timeouts: a.timeouts || {},
-      cwd: root,
-      env: process.env,
+      cwd: cwd || root,
+      env: taskEnv,
       adapterOptions: resolveOptions(name),
       create: useChain
         ? (o) => createResilientAdapter({
@@ -420,5 +426,8 @@ export async function cmdPair(args, { root, p, log }) {
   // stderr so a caller parsing stdout gets exactly one JSON document.
   process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
   process.stderr.write(`pairing payload minted (nodeId=${payload.nodeId}, endpoint=${payload.endpoint}, expiresAt=${payload.expiresAt}, certFingerprint=${nodeCertSha256 ? nodeCertSha256.slice(0, 16) + '…' : null})\n`);
+  // Audit 1.1: scopes are requested by the device at pairing time, so the
+  // operator must know what they imply before granting one.
+  process.stderr.write('note: devices request scopes at pairing; the task-control scope implies arbitrary code execution as the node user (docs/THREAT-MODEL.md T-1)\n');
   return 0;
 }

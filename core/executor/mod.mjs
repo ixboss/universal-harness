@@ -27,6 +27,41 @@ import { createNamedAdapter } from '../adapter/registry.mjs';
 import { redact } from '../errors/mod.mjs';
 
 /**
+ * Audit 1.1: the environment a task's harness child receives. Tasks run as
+ * the node OS user (docs/THREAT-MODEL.md T-1: task-control implies code
+ * execution), so the child must not inherit operator-wide secrets. This is a
+ * strict allowlist — anything not listed (or not `UH_*`) is dropped.
+ *
+ * Coverage: OS runtime basics (PATH, Windows loader vars), locale, dsh's
+ * DSH_HOME, standard proxy variables, the provider API keys/base URLs the
+ * adapters read, and the harness's own UH_* configuration.
+ */
+const TASK_ENV_NAMES = new Set([
+  'PATH', 'PATHEXT', 'COMSPEC', 'SystemRoot', 'windir',
+  'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH',
+  'APPDATA', 'LOCALAPPDATA', 'ProgramFiles', 'ProgramData',
+  'TEMP', 'TMP', 'LANG', 'LC_ALL', 'TZ',
+  'DSH_HOME',
+  'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'ALL_PROXY',
+  'http_proxy', 'https_proxy', 'no_proxy', 'all_proxy',
+  'DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL',
+  'ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN',
+  'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_APPLICATION_CREDENTIALS',
+  'OPENAI_API_KEY', 'OPENAI_BASE_URL',
+]);
+const TASK_ENV_PREFIXES = ['UH_'];
+
+export function taskEnvAllowlist(env = process.env) {
+  const out = {};
+  for (const key of Object.keys(env)) {
+    if (TASK_ENV_NAMES.has(key) || TASK_ENV_PREFIXES.some((p) => key.startsWith(p))) {
+      out[key] = env[key];
+    }
+  }
+  return out;
+}
+
+/**
  * The production executor: one dsh SDK child per task, driven exactly as the
  * adapter already drives it. Nothing upstream is replaced.
  */

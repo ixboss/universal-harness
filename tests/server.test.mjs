@@ -278,3 +278,49 @@ test('recovery: a queued task settles as failed when no executor can run it', as
     assert.match(failureEvent.payload.reason || '', /executor/);
   });
 });
+
+test('audit 1.1: task.start runs the executor inside the task project directory, never the portable root', async () => {
+  await withStack(async (stack) => {
+    const ctxs = [];
+    const server = createNodeServer({
+      root: stack.root, p: stack.p,
+      identity: stack.identity, auth: stack.auth, events: stack.events,
+      workspace: stack.workspace,
+      executorFactory: (ctx) => { ctxs.push(ctx); return createFakeExecutor({ frames: 1 }); },
+      uhVersion: '0.3.0',
+    });
+    const session = await buildPairedSession(stack, { server });
+    const proj = stack.workspace.createProject({ name: 'contained' });
+    const expectedDir = path.resolve(stack.root, 'data', 'projects', 'contained');
+
+    const reply = await session.wire.request('task.start', { projectId: proj.projectId, prompt: 'work' }, 'req_cwd_0001');
+    assert.equal(reply.ok, true, JSON.stringify(reply.payload));
+    for (let i = 0; i < 100 && ctxs.length === 0; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.equal(ctxs.length, 1, 'the executor factory received a per-task context');
+    assert.equal(path.resolve(ctxs[0].cwd), path.resolve(expectedDir));
+    assert.ok(ctxs[0].cwd.startsWith(path.resolve(stack.root, 'data', 'projects')),
+      'the task cwd stays inside data/projects/');
+  });
+});
+
+test('audit 1.1: a task with an unresolvable project falls back inside data/projects (never the portable root)', async () => {
+  await withStack(async (stack) => {
+    const ctxs = [];
+    const server = createNodeServer({
+      root: stack.root, p: stack.p,
+      identity: stack.identity, auth: stack.auth, events: stack.events,
+      workspace: stack.workspace,
+      executorFactory: (ctx) => { ctxs.push(ctx); return createFakeExecutor({ frames: 1 }); },
+      uhVersion: '0.3.0',
+    });
+    const session = await buildPairedSession(stack, { server });
+    // craftTask uses projectId null; drive it through a real task.start with a
+    // projectId the node does not know.
+    const reply = await session.wire.request(
+      'task.start', { projectId: `proj_${'e'.repeat(32)}`, prompt: 'work' }, 'req_cwd_0002');
+    assert.equal(reply.ok, true, JSON.stringify(reply.payload));
+    for (let i = 0; i < 100 && ctxs.length === 0; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.equal(ctxs.length, 1);
+    assert.equal(path.resolve(ctxs[0].cwd), path.resolve(stack.root, 'data', 'projects'));
+  });
+});
