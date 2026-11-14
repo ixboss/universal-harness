@@ -91,11 +91,19 @@ jobs:
           UH_KEY_ALIAS: ${{ secrets.UH_KEY_ALIAS }}
           UH_KEY_PASSWORD: ${{ secrets.UH_KEY_PASSWORD }}
         run: ./gradlew assembleOnlineRelease
-      - name: Stage APK for the release job
+      # Audit 2.5: CycloneDX SBOM of the Android build's dependencies, shipped
+      # alongside the APK. UNVERIFIED locally (no JDK on the audit host); the
+      # CI android jobs exercise this plugin configuration first.
+      - name: Generate CycloneDX SBOM
+        working-directory: android
+        run: ./gradlew :app:cyclonedxBom
+      - name: Stage APK + SBOM for the release job
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dist-android
-          path: android/app/build/outputs/apk/online/release/*.apk
+          path: |
+            android/app/build/outputs/apk/online/release/*.apk
+            android/app/build/reports/**/*.json
           if-no-files-found: error
 
   publish:
@@ -103,13 +111,18 @@ jobs:
     needs: [desktop-bundles, android-apk]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write      # creates the GitHub Release and uploads assets
+      # Audit 2.5: provenance attestation signs via GitHub OIDC.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Collect dist artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: dist-*
           path: dist-staged
@@ -118,8 +131,20 @@ jobs:
         run: |
           mkdir -p dist
           find dist-staged -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.apk' \) -exec cp {} dist/ \;
+          find dist-staged -type f -name 'bom-*.json' -exec cp {} dist/ \;
           ls -la dist/
       - name: Generate SHA256SUMS.txt and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/publish-release.mjs --out dist --publish
+      # Audit 2.5: SLSA-style build provenance attestation for every artifact
+      # (bundles, APK, SBOM) — signed by GitHub's OIDC identity and queryable
+      # via `gh attestation verify`. SHA256SUMS.txt stays as the plain-hash flow.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+        with:
+          subject-path: |
+            dist/**/*.zip
+            dist/**/*.tar.gz
+            dist/**/*.apk
+            dist/**/bom-*.json
