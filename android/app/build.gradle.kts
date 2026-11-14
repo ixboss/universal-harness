@@ -30,22 +30,28 @@ val uploadKeyPassword = providers.environmentVariable("UH_KEY_PASSWORD").orNull
 // Automatic fallback keystore so Windows local builds and Linux CI runners
 // produce *installable* release APKs with zero setup. The fallback is generated
 // on demand with keytool from the JDK running Gradle (no binary committed).
+// Generation failures (read-only checkout, no keytool) degrade to unsigned
+// release output instead of hard-failing unrelated tasks like `gradlew help`.
 val fallbackKeystore = rootProject.file("keystore/fallback-release.jks")
 if (!fallbackKeystore.isFile) {
-    val isWindows = System.getProperty("os.name").lowercase().contains("windows")
-    val keytool = File(System.getProperty("java.home"), if (isWindows) "bin/keytool.exe" else "bin/keytool")
-    if (keytool.isFile) {
-        fallbackKeystore.parentFile.mkdirs()
-        val proc = ProcessBuilder(
-            keytool.absolutePath, "-genkeypair", "-v",
-            "-keystore", fallbackKeystore.absolutePath,
-            "-alias", "universal-harness",
-            "-keyalg", "RSA", "-keysize", "2048", "-validity", "10950",
-            "-storepass", "universal-harness", "-keypass", "universal-harness",
-            "-dname", "CN=Universal Harness Fallback Release, O=universal-harness, C=US",
-        ).redirectErrorStream(true).start()
-        val out = proc.inputStream.bufferedReader().readText()
-        check(proc.waitFor() == 0) { "could not generate the fallback release keystore:\n$out" }
+    try {
+        val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+        val keytool = File(System.getProperty("java.home"), if (isWindows) "bin/keytool.exe" else "bin/keytool")
+        if (keytool.isFile) {
+            fallbackKeystore.parentFile.mkdirs()
+            val proc = ProcessBuilder(
+                keytool.absolutePath, "-genkeypair", "-v",
+                "-keystore", fallbackKeystore.absolutePath,
+                "-alias", "universal-harness",
+                "-keyalg", "RSA", "-keysize", "2048", "-validity", "10950",
+                "-storepass", "universal-harness", "-keypass", "universal-harness",
+                "-dname", "CN=Universal Harness Fallback Release, O=universal-harness, C=US",
+            ).redirectErrorStream(true).start()
+            val out = proc.inputStream.bufferedReader().readText()
+            check(proc.waitFor() == 0) { "could not generate the fallback release keystore:\n$out" }
+        }
+    } catch (e: Throwable) {
+        logger.warn("fallback release keystore unavailable: ${e.message}")
     }
 }
 val hasUploadSigning = listOf(

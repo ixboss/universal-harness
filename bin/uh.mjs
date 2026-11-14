@@ -5,13 +5,15 @@
 // node. The shims UniversalHarness.cmd / UniversalHarness.sh locate the
 // bundled binary so no global Node/npm/pnpm/Python/Git is required (spec §3).
 
+import fs from 'node:fs';
+import path from 'node:path';
 import { findRoot, validateRoot, portablePaths } from '../core/paths/mod.mjs';
 import { createLogger } from '../core/logging/mod.mjs';
 import { UhError } from '../core/errors/mod.mjs';
 import { setupRuntime } from '../core/runtime/setup.mjs';
 import { runDoctor, printDoctorReport } from '../core/diagnostics/mod.mjs';
 import { cmdExec, cmdSmoke, cmdRuntime } from '../core/cli/modes.mjs';
-import { cmdWorkspace, cmdSession, cmdMigrate, cmdBackup, cmdRestore, cmdExport, cmdImport, cmdAdapters } from '../core/cli/registry.mjs';
+import { cmdWorkspace, cmdSession, cmdMigrate, cmdBackup, cmdRestore, cmdExport, cmdImport, cmdAdapters, cmdConfig } from '../core/cli/registry.mjs';
 import { cmdServe, cmdPair } from '../core/cli/serve.mjs';
 import { cmdConnect } from '../core/cli/connect.mjs';
 
@@ -32,6 +34,8 @@ Commands:
   pair                  mint a single-use pairing payload bound to this node identity
   connect <sub>         controller: pair with a node, inspect projects/sessions,
                         start and observe tasks, replay events (uh connect help)
+  config <sub>          portable config: list | get <path> | set <path> <value>
+  adapters              list the registered harness adapters and the active one
   migrate check|apply   detect a moved workspace root and migrate safely
   backup [label]        create a versioned backup of Universal Harness metadata
   restore <label>       restore metadata backup (conflict-checked, never blind)
@@ -94,6 +98,7 @@ async function main() {
       case 'restore': return await cmdRestore(rest, { root, p, log });
       case 'export': return await cmdExport(rest, { root, p, log });
       case 'import': return await cmdImport(rest, { root, p, log });
+      case 'config': return await cmdConfig(rest, { root, p, log });
       case 'exec': return await cmdExec(rest, { root, p, log });
       case 'smoke': return await cmdSmoke(rest, { root, p, log });
       case 'serve': return await cmdServe(rest, { root, p, log });
@@ -105,6 +110,11 @@ async function main() {
         return 2;
     }
   } catch (err) {
+    // Usage errors exit 2 (distinct from a command that ran and failed).
+    if (err?.code === 'USAGE') {
+      process.stderr.write(`${err.message}\n`);
+      return 2;
+    }
     const e = err instanceof UhError ? err
       : new UhError('UH_INTERNAL', err?.message || String(err), {}, undefined, err);
     log.error('command failed', { code: e.code, ...e.toJSON(), stack: process.env.UH_DEBUG ? err?.stack : undefined });
@@ -122,9 +132,6 @@ function writeDiagnostics(report, p) {
     process.stdout.write(`\nDiagnostics written to ${path.join('diagnostics', file)}\n`);
   } catch { /* diagnostics must never crash the CLI */ }
 }
-
-import fs from 'node:fs';
-import path from 'node:path';
 
 main().then((code) => process.exit(code)).catch((e) => {
   process.stderr.write(`UH_INTERNAL: ${e?.stack || e}\n`);

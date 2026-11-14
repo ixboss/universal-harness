@@ -32,6 +32,7 @@ export const SCOPE_OPERATIONS = {
     'session.list', 'session.read', 'session.replay',
     'project.list', 'project.open',
     'task.list', 'task.history',
+    'node.status',
     'file.browse', 'file.read',
     'diagnostics.run',
   ],

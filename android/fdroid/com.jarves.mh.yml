@@ -2,30 +2,28 @@ Categories:
   - Development
   - System
 License: MIT
-AuthorName: TechJarves
-SourceCode: https://github.com/techjarves/Mobile-Harness
-IssueTracker: https://github.com/techjarves/Mobile-Harness/issues
-Changelog: https://github.com/techjarves/Mobile-Harness/releases
+AuthorName: ixboss
+SourceCode: https://github.com/ixboss/universal-harness
+IssueTracker: https://github.com/ixboss/universal-harness/issues
+Changelog: https://github.com/ixboss/universal-harness/releases
 
-AutoName: Mobile Harness
+AutoName: Universal Harness
 
 RepoType: git
-Repo: https://github.com/techjarves/Mobile-Harness.git
+Repo: https://github.com/ixboss/universal-harness.git
 
 AntiFeatures:
   - NonFreeNet
 
 Builds:
-  - versionName: 1.0.2
-    versionCode: 3
-    commit: v1.0.2
-    subdir: app
-    ndk: r26b
-    submodules: true
+  - versionName: 1.0.0
+    versionCode: 6
+    commit: v1.0.0
+    subdir: android/app
     gradle:
-      - yes
+      - online
 
 AutoUpdateMode: Version v%v
-UpdateCheckMode: Tags
-CurrentVersion: 1.0.2
-CurrentVersionCode: 3
+UpdateCheckMode: Tags ^v[\d.]+$
+CurrentVersion: 1.0.0
+CurrentVersionCode: 6

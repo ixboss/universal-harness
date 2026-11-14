@@ -57,6 +57,7 @@
       "enum": [
         "auth.connect",
         "node.hello",
+        "node.status",
         "device.pair",
         "device.list",
         "device.revoke",

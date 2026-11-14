@@ -162,7 +162,7 @@ export function createEventStore({ p, log = null, maxEvents = 200_000 }) {
     }
 
     events.sort((a, b) => a.eventId - b.eventId);
-    const unavailable = cursor > 0 && (earliestSeen === null || cursor < earliestSeen);
+    const unavailable = cursor > 0 && (earliestSeen === null || cursor < earliestSeen - 1);
     if (nextCursor === null && events.length) nextCursor = events[events.length - 1].eventId;
     return { events, truncated, nextCursor, unavailable, head };
   }
@@ -274,6 +274,19 @@ export function createEventStore({ p, log = null, maxEvents = 200_000 }) {
   }
 
   rebuild();
+
+  // Retention: without this the durable log and the in-memory replay index
+  // grew without bound. Compact once at startup when over budget (terminal
+  // task states are always preserved; idempotency acceptance degrades to
+  // accept-on-match for compacted tasks, which is the documented behaviour).
+  if (records.length > maxEvents) {
+    try {
+      const res = compact({ keepEvents: Math.floor(maxEvents / 2) });
+      log?.info?.(`startup retention compacted the durable event log (${res.compacted} records dropped)`);
+    } catch (e) {
+      log?.warn?.(`startup retention compaction failed: ${e?.message}`);
+    }
+  }
 
   return {
     append,

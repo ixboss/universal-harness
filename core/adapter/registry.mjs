@@ -108,7 +108,7 @@ export function isAdapter(name) {
 export function createNamedAdapter(name, opts = {}) {
   const id = normalizeAdapterName(name);
   if (!id) {
-    throw new UhError(ERR.UH_INTERNAL, `unknown harness adapter "${name}"`, { adapter: String(name) },
+    throw new UhError(ERR.ADAPTER_UNKNOWN, `unknown harness adapter "${name}"`, { adapter: String(name) },
       `Run \`uh adapters\` to list the registered adapters.`);
   }
   const T = { ...DEFAULT_TIMEOUTS, ...(opts.timeouts || {}) };
@@ -168,6 +168,101 @@ function makeEmitter(log) {
 function noop() {}
 
 // ---------------------------------------------------------------------------
+// Resilience chain
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the adapter chain for a primary selection: the active adapter first,
+ * then the configured fallbacks (`adapter.harnessChain`), deduplicated and
+ * order-stable.
+ */
+export function adapterChainFromConfig(primary, config) {
+  const chain = [normalizeAdapterName(primary) || 'deepseek'];
+  for (const raw of config?.adapter?.harnessChain || []) {
+    const id = normalizeAdapterName(raw);
+    if (id && !chain.includes(id)) chain.push(id);
+  }
+  return chain;
+}
+
+/**
+ * An adapter that tries each name in `names` in order at launch time and
+ * serves the task with the first one that actually starts. `resolveOptions`
+ * maps a registry id to that adapter's createNamedAdapter options (config
+ * sections differ per adapter). One dead gateway therefore degrades the task
+ * to the next harness instead of failing it.
+ *
+ * Conforms to the same contract as every other adapter, so it plugs straight
+ * into createAdapterExecutor.
+ */
+export function createResilientAdapter({ names, resolveOptions, log = consoleShim(), timeouts = {} }) {
+  const T = { ...DEFAULT_TIMEOUTS, ...timeouts };
+  const { on, emit } = makeEmitter(log);
+  let inner = null;
+  let chosen = null;
+  const startErrors = [];
+
+  function guard(method) {
+    if (!inner) {
+      throw new UhError(ERR.DSH_START_FAILED, `harness adapter not launched (call launch() first)`, { method });
+    }
+    return inner;
+  }
+
+  return {
+    kind: 'resilient',
+    chain: names,
+    get chosen() { return chosen; },
+    on,
+    get exited() { return inner ? inner.exited : null; },
+    get pid() { return inner ? inner.pid : null; },
+    timeouts: T,
+
+    async launch() {
+      for (const name of names) {
+        const candidate = createNamedAdapter(name, { ...resolveOptions(name), log, timeouts: T });
+        try {
+          await candidate.launch();
+          inner = candidate;
+          chosen = name;
+          // Forward the delegate's events to the wrapper's listeners (the
+          // executor attached its listeners here, before launch).
+          for (const evt of ['event', 'status', 'reasoning', 'stderr', 'exit', ...SDK_NOTIFICATIONS_FALLBACK]) {
+            candidate.on(evt, (payload) => emit(evt, payload));
+          }
+          if (names[0] !== name) {
+            emit('status', { adapter: name, fallback: true, note: `${names[0]} unavailable; serving with ${name}` });
+          }
+          return;
+        } catch (e) {
+          startErrors.push(`${name}: ${e.message?.slice(0, 200)}`);
+        }
+      }
+      throw new UhError(ERR.DSH_START_FAILED,
+        `no harness adapter in the chain could start (${startErrors.join(' | ')})`,
+        { chain: names },
+        'Check the endpoints/commands of the adapters in `uh adapters`, or fix the primary harness.');
+    },
+    initialize: () => guard('initialize').initialize(),
+    prompt: (params) => guard('prompt').prompt(params),
+    cancel: (opts) => inner ? inner.cancel(opts) : Promise.resolve(),
+    shutdown: () => { try { inner?.shutdown(); } catch {} },
+    close: () => { try { inner?.close(); } catch {} },
+    report: () => ({
+      ...(inner ? inner.report() : {}),
+      // Chain metadata last so `adapter` names the chosen harness and the
+      // resilience context is always present.
+      adapter: chosen || 'chain',
+      chain: names,
+      chosen,
+      startErrors,
+    }),
+  };
+}
+
+const SDK_NOTIFICATIONS_FALLBACK = ['subagent.started', 'subagent.finished'];
+
+// ---------------------------------------------------------------------------
 // HTTP + SSE adapter (omniroute / openai-compatible)
 // ---------------------------------------------------------------------------
 
@@ -196,7 +291,9 @@ export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, label = 'opena
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), Math.max(T.startup, 1000));
     try {
-      const res = await fetch(`${base}/models`, { headers: headers(), signal: ctl.signal });
+      // redirect: 'error' — a redirect must never carry the Bearer key to
+      // another origin.
+      const res = await fetch(`${base}/models`, { headers: headers(), signal: ctl.signal, redirect: 'error' });
       if (!res.ok) throw new UhError(ERR.DSH_START_FAILED, `${label} endpoint answered ${res.status} for ${base}/models`, { baseUrl: base },
         'Start the local router/gateway, or point UH_ADAPTER config at a reachable one.');
     } catch (e) {
@@ -230,6 +327,7 @@ export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, label = 'opena
           method: 'POST',
           headers: headers(),
           signal: controller.signal,
+          redirect: 'error',
           body: JSON.stringify({ model, stream: true, messages: [{ role: 'user', content: String(text || '') }] }),
         });
         if (!res.ok || !res.body) {
@@ -240,6 +338,7 @@ export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, label = 'opena
         // that is not parseable JSON is surfaced as raw output, never dropped.
         const decoder = new TextDecoder();
         let buf = '';
+        let done = false;
         for await (const chunk of res.body) {
           buf += decoder.decode(chunk, { stream: true });
           let idx;
@@ -248,7 +347,7 @@ export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, label = 'opena
             buf = buf.slice(idx + 1);
             if (!line.startsWith('data:')) continue;
             const data = line.slice(5).trim();
-            if (data === '[DONE]') { buf = ''; break; }
+            if (data === '[DONE]') { done = true; break; }
             try {
               const evt = JSON.parse(data);
               const delta = evt?.choices?.[0]?.delta?.content;
@@ -262,6 +361,7 @@ export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, label = 'opena
               emit('event', { raw: data.slice(0, 2000) });
             }
           }
+          if (done) break;
         }
       } catch (e) {
         lastError = e;
@@ -344,13 +444,26 @@ export function createCliProcessAdapter({ command, args, promptMode = 'arg', lab
 
     prompt({ text }) {
       exited = null;
+      stderrTail = [];
       const fullArgs = promptMode === 'arg' ? [...args, String(text || '')] : args;
       child = spawn(command, fullArgs, {
         cwd: cwd || undefined,
         env: { ...process.env, ...env },
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
+        // Own process group on POSIX so cancel() can take down grandchildren
+        // (shells, ripgrep, …) the CLI spawns. Windows uses taskkill /T.
+        detached: process.platform !== 'win32',
       });
+      // T.prompt === 0 means "a long turn is not an error" — no timer at all
+      // (a 24-hour setTimeout would be indistinguishable from a leak).
+      let promptTimer = null;
+      if (T.prompt > 0) {
+        promptTimer = setTimeout(() => {
+          emit('stderr', `${label}: prompt exceeded ${T.prompt}ms — terminating`);
+          try { child.kill('SIGKILL'); } catch {}
+        }, T.prompt);
+      }
       const stdout = child.stdout;
       let buf = '';
       stdout.setEncoding('utf8');
@@ -380,8 +493,14 @@ export function createCliProcessAdapter({ command, args, promptMode = 'arg', lab
         if (stderrTail.length > 50) stderrTail.shift();
         emit('stderr', String(d));
       });
-      child.on('error', (e) => emitExit({ code: null, signal: null, error: e }));
-      child.on('exit', (code, signal) => emitExit({ code, signal }));
+      child.on('error', (e) => {
+        if (promptTimer) { clearTimeout(promptTimer); promptTimer = null; }
+        emitExit({ code: null, signal: null, error: e });
+      });
+      child.on('exit', (code, signal) => {
+        if (promptTimer) { clearTimeout(promptTimer); promptTimer = null; }
+        emitExit({ code, signal });
+      });
       return { pid: child.pid };
     },
 
@@ -392,7 +511,12 @@ export function createCliProcessAdapter({ command, args, promptMode = 'arg', lab
       const timer = setTimeout(() => { try { c.kill('SIGKILL'); } catch {} }, Math.max(timeoutMs, 0));
       c.once('exit', () => clearTimeout(timer));
       if (process.platform === 'win32' && c.pid) {
-        try { spawn('taskkill', ['/PID', String(c.pid), '/T', '/F'], { stdio: 'ignore' }); } catch {}
+        try { spawn('taskkill', ['/PID', String(c.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); } catch {}
+      } else if (c.pid) {
+        // Take down the whole process group (the child was spawned detached).
+        try { process.kill(-c.pid, 'SIGTERM'); } catch {}
+        const groupTimer = setTimeout(() => { try { process.kill(-c.pid, 'SIGKILL'); } catch {} }, Math.max(timeoutMs, 0));
+        c.once('exit', () => clearTimeout(groupTimer));
       }
     },
     shutdown: noop,

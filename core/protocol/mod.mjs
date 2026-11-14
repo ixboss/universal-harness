@@ -20,6 +20,7 @@ export const ENVELOPE_TYPES = ['request', 'response', 'event', 'error', 'notific
 export const KINDS = {
   AUTH_CONNECT: 'auth.connect',
   NODE_HELLO: 'node.hello',
+  NODE_STATUS: 'node.status',
   DEVICE_PAIR: 'device.pair',
   DEVICE_LIST: 'device.list',
   DEVICE_REVOKE: 'device.revoke',
@@ -217,6 +218,7 @@ export function validatePayload(kind, type, payload) {
 // implemented message type has a schema (brief §17).
 const PAYLOAD_SCHEMA_DEF = {
   [KINDS.NODE_HELLO]: ['operations.schema.json', 'NodeHello'],
+  [KINDS.NODE_STATUS]: ['operations.schema.json', 'NodeStatusRequest'],
   [KINDS.AUTH_CONNECT]: ['operations.schema.json', 'AuthConnect'],
   [KINDS.DEVICE_PAIR]: ['pairing.schema.json', 'PairRequest'],
   [KINDS.SESSION_REPLAY]: ['operations.schema.json', 'ReconnectHandshake'],
@@ -293,6 +295,7 @@ export function buildCapabilities({ nodeId, platform, architecture, nodeKind = '
 
 /** Operations this node actually serves (the advertisement subset). */
 export const ADVERTISED_OPERATIONS = [
+  KINDS.NODE_STATUS,
   KINDS.AUTH_CONNECT,
   KINDS.DEVICE_PAIR,
   KINDS.DEVICE_LIST,

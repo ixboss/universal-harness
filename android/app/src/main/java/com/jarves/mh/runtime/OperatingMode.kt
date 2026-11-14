@@ -46,7 +46,7 @@ data class LanTarget(
 }
 
 /** Device-local persistence for the dual-mode switcher (never synced, never exported). */
-class DualModePreferences(context: Context) {
+class DualModePreferences(private val context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("uh_dual_mode", Context.MODE_PRIVATE)
 
@@ -61,7 +61,6 @@ class DualModePreferences(context: Context) {
             .putInt(KEY_PORT, target.port)
             .putString(KEY_PIN, target.pinnedCertSha256)
             .putString(KEY_DEVICE_ID, target.deviceId)
-            .putString(KEY_SEED, target.deviceSeedB64)
             .apply()
     }
 
@@ -73,8 +72,38 @@ class DualModePreferences(context: Context) {
             port = prefs.getInt(KEY_PORT, 7437),
             pinnedCertSha256 = pin,
             deviceId = prefs.getString(KEY_DEVICE_ID, null),
-            deviceSeedB64 = prefs.getString(KEY_SEED, null),
+            deviceSeedB64 = null, // the seed lives sealed in the keystore, never in prefs
         )
+    }
+
+    /**
+     * Persist the Ed25519 device seed sealed with the hardware-backed
+     * KeystoreCipher (AES-256-GCM), the same pattern [ApiKeyVault] uses.
+     * ADR-004: device-local secrets never sit in plaintext preferences —
+     * the old base64-in-SharedPreferences storage was trivially extractable
+     * on a rooted device and granted permanent node access. A one-time
+     * migration seals a legacy plaintext seed and deletes it.
+     */
+    fun saveSeedSealed(seed: ByteArray) {
+        val sealed = com.universalharness.node.KeystoreCipher.encrypt(seed)
+        prefs.edit()
+            .putString(KEY_SEED, Base64.encodeToString(sealed, Base64.NO_WRAP))
+            .remove(KEY_SEED_LEGACY)
+            .apply()
+    }
+
+    /** The device key restored from keystore-sealed material, or null. */
+    fun loadSeededKey(): com.universalharness.node.DeviceKey? {
+        // One-time migration: a seed stored plaintext by an older build is
+        // sealed now and the plaintext entry removed.
+        val legacy = prefs.getString(KEY_SEED_LEGACY, null)
+        if (legacy != null) {
+            decodeSeed(legacy)?.let { saveSeedSealed(it) }
+        }
+        val sealedB64 = prefs.getString(KEY_SEED, null) ?: return null
+        val sealed = decodeSeed(sealedB64) ?: return null
+        val seed = runCatching { com.universalharness.node.KeystoreCipher.decrypt(sealed) }.getOrNull() ?: return null
+        return com.universalharness.node.DeviceKey.fromSeed(seed)
     }
 
     companion object {
@@ -83,10 +112,8 @@ class DualModePreferences(context: Context) {
         private const val KEY_PORT = "lan_port"
         private const val KEY_PIN = "lan_cert_pin"
         private const val KEY_DEVICE_ID = "lan_device_id"
-        private const val KEY_SEED = "lan_device_seed_b64"
-
-        fun encodeSeed(seed: ByteArray): String =
-            Base64.encodeToString(seed, Base64.NO_WRAP)
+        private const val KEY_SEED = "lan_device_seed_sealed"
+        private const val KEY_SEED_LEGACY = "lan_device_seed_b64"
 
         fun decodeSeed(b64: String): ByteArray? =
             runCatching { Base64.decode(b64, Base64.NO_WRAP) }.getOrNull()

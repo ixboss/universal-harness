@@ -27,7 +27,7 @@ import {
 } from '../../core/transport/mod.mjs';
 import { createNetworkNodeListener, createLoopbackNodeListener } from '../../core/transport/net.mjs';
 import { createDshExecutor, createAdapterExecutor } from '../../core/executor/mod.mjs';
-import { normalizeAdapterName } from '../../core/adapter/registry.mjs';
+import { normalizeAdapterName, adapterChainFromConfig, createResilientAdapter } from '../../core/adapter/registry.mjs';
 import { createRuntimeManager } from '../../core/runtime/mod.mjs';
 import { createSecureStorage } from '../../core/secrets/mod.mjs';
 import { createConfig } from '../../core/config/mod.mjs';
@@ -91,7 +91,17 @@ export async function cmdServe(args, { root, p, log }) {
   // (adapter.harness, default deepseek). Unregistered names fail loudly.
   const config = createConfig({ root, p }).load();
   const adapterName = resolveAdapterName(args, config);
-  const executorFactory = buildExecutorFactory({ adapterName, config, runtimeManager, root, log });
+  // adapter.*.apiKeyRef -> the OS secure store (never the portable tree).
+  // Resolved once at startup; a missing secret leaves the key unset rather
+  // than failing the whole node.
+  const apiKeys = {};
+  for (const sectionName of ['omniroute', 'openaiCompatible', 'claudeCode', 'geminiCli']) {
+    const ref = config.adapter?.[sectionName]?.apiKeyRef;
+    if (!ref) continue;
+    try { apiKeys[sectionName] = await secureStorage.getSecret(ref); }
+    catch (e) { log.warn(`adapter.apiKeyRef "${ref}" could not be read from the secure store: ${e.message}`); }
+  }
+  const executorFactory = buildExecutorFactory({ adapterName, config, runtimeManager, root, log, apiKeys });
   log.info(`harness adapter: ${adapterName}`);
 
   const server = createNodeServer({
@@ -105,6 +115,7 @@ export async function cmdServe(args, { root, p, log }) {
     uhVersion: (await import('../../package.json', { with: { type: 'json' } }).catch(() => ({ default: { version: 'dev' } }))).default.version,
     runtimeManager,
     nodeDescriptor,
+    nodeInfo: { active: adapterName, chain: adapterChainFromConfig(adapterName, config) },
   });
 
   // Startup recovery runs before the first client can connect, so the state a
@@ -134,10 +145,12 @@ export async function cmdServe(args, { root, p, log }) {
   });
 
   // Keep the process alive for the transport's benefit and exit cleanly when
-  // the client disconnects or asks to shut down.
+  // the client disconnects or asks to shut down. Live task executors are torn
+  // down first so harness children never outlive the node.
   await new Promise((resolve) => {
-    transport.onClose((reason) => {
+    transport.onClose(async (reason) => {
       log.info(`stdio transport closed (${String(reason).slice(0, 200)})`);
+      try { const n = await server.shutdown(); if (n) log.info(`cancelled ${n} live task(s) on shutdown`); } catch { /* exit regardless */ }
       resolve();
     });
   });
@@ -163,39 +176,68 @@ export function resolveAdapterName(args, config) {
 /**
  * Build the per-task executor factory for the selected adapter. dsh keeps its
  * dedicated executor; every registry adapter goes through the generic
- * adapter executor with per-harness settings from config + env.
+ * adapter executor with per-harness settings from config + env. When
+ * `adapter.harnessChain` lists fallbacks, the adapter itself becomes a
+ * resilient chain: launch-time failures fall through to the next harness.
  */
-export function buildExecutorFactory({ adapterName, config, runtimeManager, root, log }) {
-  if (adapterName === 'deepseek') {
-    return () => createDshExecutor({
+export function buildExecutorFactory({ adapterName, config, runtimeManager, root, log, apiKeys = {} }) {
+  const a = config?.adapter || {};
+  const chain = adapterChainFromConfig(adapterName, config);
+  const resolveOptions = (name) => adapterOptionsFor(name, a, apiKeys);
+  const useChain = chain.length > 1;
+
+  return () => {
+    if (!useChain && adapterName === 'deepseek') {
+      return createDshExecutor({
+        rm: runtimeManager,
+        log,
+        dshHome: process.env.DSH_HOME || null,
+        cwd: root,
+        env: process.env,
+      });
+    }
+    const name = adapterName;
+    return createAdapterExecutor({
+      name,
       rm: runtimeManager,
       log,
-      dshHome: process.env.DSH_HOME || null,
+      timeouts: a.timeouts || {},
       cwd: root,
       env: process.env,
+      adapterOptions: resolveOptions(name),
+      create: useChain
+        ? (o) => createResilientAdapter({
+            names: chain,
+            resolveOptions: (n) => ({ ...adapterOptionsFor(n, a, apiKeys), ...o }),
+            log,
+            timeouts: a.timeouts || {},
+          })
+        : undefined,
     });
-  }
-  const a = config?.adapter || {};
-  const section = adapterName === 'omniroute' ? a.omniroute
-    : adapterName === 'openai-compatible' ? a.openaiCompatible
-    : adapterName === 'claude-code' ? a.claudeCode
-    : a.geminiCli;
-  const adapterOptions = {
+  };
+}
+
+/**
+ * Per-adapter createNamedAdapter options resolved from the config sections
+ * and environment overrides. API keys never come from the portable config —
+ * the environment, or the OS secure store via adapter.apiKeyRef.
+ */
+function adapterOptionsFor(name, a, apiKeys = {}) {
+  const section = name === 'omniroute' ? a.omniroute
+    : name === 'openai-compatible' ? a.openaiCompatible
+    : name === 'claude-code' ? a.claudeCode
+    : name === 'gemini-cli' ? a.geminiCli
+    : {};
+  const keyName = name === 'omniroute' ? 'omniroute'
+    : name === 'openai-compatible' ? 'openaiCompatible' : name;
+  return {
     model: a.model && !a.model.startsWith('deepseek') ? a.model : null,
     baseUrl: section?.baseUrl || null,
-    apiKey: null, // API keys never come from the portable config; env or the OS secure store only
+    apiKey: apiKeys[keyName] || null,
     command: section?.command || null,
     args: Array.isArray(section?.args) ? section.args : null,
+    apiKeyRef: section?.apiKeyRef || null,
   };
-  return () => createAdapterExecutor({
-    name: adapterName,
-    rm: runtimeManager,
-    log,
-    timeouts: a.timeouts || {},
-    cwd: root,
-    env: process.env,
-    adapterOptions,
-  });
 }
 
 function usageError(message) {
@@ -267,9 +309,11 @@ async function runListenMode({ server, stack, listenSpec, p, secureStorage, log,
 
   await new Promise((resolve) => {
     let done = false;
-    const finish = (signal) => {
+    const finish = async (signal) => {
       if (done) return;
       done = true;
+      // Cancel live tasks before the process dies: no orphaned dsh/claude/gemini.
+      try { const n = await server.shutdown(); if (n) log.info(`cancelled ${n} live task(s) on ${signal}`); } catch { /* exit regardless */ }
       try { listener.close(signal); } catch {}
       if (announcement) fs.rmSync(announcement, { force: true });
       resolve();

@@ -16,9 +16,13 @@ jobs:
     strategy:
       matrix:
         include:
-          - { os: windows-latest, targets: '--target win-x64' }
-          - { os: ubuntu-latest, targets: '--target linux-x64' }
-          - { os: macos-latest, targets: '--target macos-arm64 --target linux-x64' }
+          # Per-target bundles (--no-universal: the universal bundle is built
+          # exactly once below, not three times under colliding filenames).
+          - { os: windows-latest, targets: '--target win-x64 --no-universal' }
+          - { os: ubuntu-latest, targets: '--target linux-x64 --no-universal' }
+          - { os: macos-latest, targets: '--target macos-arm64 --no-universal' }
+          # The universal bundle (all runtimes + all launchers), built once.
+          - { os: ubuntu-latest, targets: '--universal-only' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -45,6 +49,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
       # ubuntu-latest ships a preinstalled Android SDK with licenses accepted;
       # AGP resolves it via ANDROID_HOME (see ci.yml for the rationale).
       - name: Assemble signed release APK
@@ -81,7 +86,7 @@ jobs:
       - name: Move artifacts into dist/
         run: |
           mkdir -p dist
-          find dist-staged \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.apk' \) -exec cp {} dist/ \;
+          find dist-staged -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.apk' \) -exec cp {} dist/ \;
           ls -la dist/
       - name: Generate SHA256SUMS.txt and publish
         env:

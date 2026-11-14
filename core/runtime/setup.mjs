@@ -69,7 +69,7 @@ async function download(url, dest, sha256, { force, log }) {
 // prefer it explicitly so a GNU tar earlier on PATH cannot break extraction.
 function resolveTarCommand() {
   if (process.platform === 'win32') {
-    const sysRoot = process.env.SystemRoot || 'C:\Windows';
+    const sysRoot = process.env.SystemRoot || 'C:\\Windows';
     const sysTar = path.join(sysRoot, 'System32', 'tar.exe');
     if (fs.existsSync(sysTar)) return sysTar;
   }

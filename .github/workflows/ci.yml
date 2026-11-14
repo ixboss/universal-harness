@@ -33,6 +33,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
       # ubuntu-latest ships a preinstalled Android SDK with licenses accepted;
       # AGP resolves it via ANDROID_HOME. Do not run setup-android — its
       # cmdline-tools step breaks on the SDK Preview license prompt.

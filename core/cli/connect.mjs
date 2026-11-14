@@ -164,7 +164,7 @@ export async function cmdConnect(args, { root, p, log }) {
       case 'status': {
         const { client, node } = await openClient({ p, profile, nodeId });
         try {
-          return print({
+          const out = {
             nodeId: client.nodeId,
             platform: client.platform,
             nodeKind: client.nodeKind,
@@ -174,7 +174,22 @@ export async function cmdConnect(args, { root, p, log }) {
             deviceId: client.deviceId,
             grantedScopes: client.grantedScopes,
             endpoint: node.endpoint,
-          }, opts);
+          };
+          // Live health from node.status when the node implements it (v1+).
+          if (Array.isArray(client.operations) && client.operations.includes('node.status')) {
+            try {
+              const reply = requireOk(await client.request('node.status'), 'node.status');
+              out.health = {
+                uhVersion: reply.uhVersion,
+                uptimeSeconds: reply.uptimeSeconds,
+                startedAt: reply.startedAt,
+                connections: reply.connections,
+                tasks: reply.tasks,
+                adapter: reply.adapter,
+              };
+            } catch { /* older node: handshake info is enough */ }
+          }
+          return print(out, opts);
         } finally { client.close('status done'); }
       }
       case 'projects': {
@@ -203,7 +218,6 @@ export async function cmdConnect(args, { root, p, log }) {
         return 2;
     }
   } catch (e) {
-    if (e instanceof NodeTransportError || e?.code === 'NODE_ERROR' || e?.code === 'USAGE') return fail(e, opts);
     return fail(e, opts);
   }
 }

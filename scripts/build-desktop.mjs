@@ -35,7 +35,7 @@ const STAGE_TOP = ['bin', 'core', 'shared', 'manifests'];
 const LAUNCHERS = ['desktop/windows/UniversalHarness.bat', 'desktop/linux/UniversalHarness.sh', 'desktop/macos/UniversalHarness.command', 'desktop/launcher/README.md'];
 
 function parseArgs(argv) {
-  const out = { targets: [], out: path.join(REPO, 'dist'), 'skip-download': false, universal: true };
+  const out = { targets: [], out: path.join(REPO, 'dist'), 'skip-download': false, universal: true, 'universal-only': false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--target') out.targets.push(argv[++i]);
@@ -43,10 +43,11 @@ function parseArgs(argv) {
     else if (a === '--out') out.out = path.resolve(argv[++i]);
     else if (a === '--skip-download') out['skip-download'] = true;
     else if (a === '--no-universal') out.universal = false;
+    else if (a === '--universal-only') { out.universal = true; out['universal-only'] = true; out.targets = []; }
     else if (a === '--help' || a === '-h') { usage(); process.exit(0); }
     else fail(`unknown argument: ${a}`);
   }
-  if (!out.targets.length) out.targets = hostTarget() === 'win-x64' ? ['win-x64'] : [hostTarget()];
+  if (!out['universal-only'] && !out.targets.length) out.targets = hostTarget() === 'win-x64' ? ['win-x64'] : [hostTarget()];
   for (const t of out.targets) {
     if (!MANIFEST.node?.[t]) fail(`target "${t}" is not in manifests/runtime.manifest.json`);
   }
@@ -176,15 +177,26 @@ function archiveRoot(root, target, opts) {
   process.stdout.write(`archiving ${dest}\n`);
   fs.rmSync(dest, { force: true });
   if (ext === 'zip') {
-    if (process.platform === 'win32') {
-      r2('powershell.exe', ['-NoProfile', '-Command', `Compress-Archive -Path '${root}' -DestinationPath '${dest}' -Force`]);
-    } else {
-      r2('zip', ['-qr', dest, path.basename(root)], path.dirname(root));
-    }
+    // bsdtar writes zip directly (Windows 10+ System32 tar.exe, macOS tar):
+    // no 2 GiB Compress-Archive ceiling, no PowerShell quoting traps. GNU tar
+    // cannot, so resolve the system tar exactly like core/runtime/setup.mjs.
+    // Relative -f with cwd=opts.out: bsdtar reads a `C:\…` argument as
+    // host:path, and cwd sidesteps path quoting entirely.
+    const tarCmd = resolveSystemTar();
+    r2(tarCmd, ['--format', 'zip', '-cf', path.basename(dest), '-C', path.dirname(root), path.basename(root)], opts.out);
   } else {
-    r2('tar', ['-czf', dest, path.basename(root)], path.dirname(root));
+    r2('tar', ['-czf', path.basename(dest), '-C', path.dirname(root), path.basename(root)], opts.out);
   }
   return dest;
+}
+
+/** System tar path: Windows ships bsdtar in System32; elsewhere use PATH. */
+function resolveSystemTar() {
+  if (process.platform === 'win32') {
+    const sysTar = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
+    if (fs.existsSync(sysTar)) return sysTar;
+  }
+  return 'tar';
 }
 
 function r2(cmd, args, cwd) {
@@ -229,21 +241,19 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   fs.mkdirSync(opts.out, { recursive: true });
   const artifacts = [];
-  for (const target of opts.targets) {
-    const root = await stageTarget(target, opts);
-    if (!fs.existsSync(path.join(root, 'bin', 'uh.mjs'))) fail(`staged root is invalid (missing bin/uh.mjs): ${root}`);
-    artifacts.push(archiveRoot(root, target, opts));
+  if (!opts['universal-only']) {
+    for (const target of opts.targets) {
+      const root = await stageTarget(target, opts);
+      if (!fs.existsSync(path.join(root, 'bin', 'uh.mjs'))) fail(`staged root is invalid (missing bin/uh.mjs): ${root}`);
+      artifacts.push(archiveRoot(root, target, opts));
+    }
   }
   if (opts.universal) {
     const root = await stageUniversal(opts);
     const dest = path.join(opts.out, `UniversalHarness-v${VERSION}-usb-universal.zip`);
     process.stdout.write(`archiving ${dest}\n`);
     fs.rmSync(dest, { force: true });
-    if (process.platform === 'win32') {
-      r2('powershell.exe', ['-NoProfile', '-Command', `Compress-Archive -Path '${root}' -DestinationPath '${dest}' -Force`]);
-    } else {
-      r2('zip', ['-qr', dest, path.basename(root)], path.dirname(root));
-    }
+    r2(resolveSystemTar(), ['--format', 'zip', '-cf', path.basename(dest), '-C', path.dirname(root), path.basename(root)], opts.out);
     artifacts.push(dest);
   }
   process.stdout.write(`\ndone. artifacts:\n${artifacts.map((a) => `  ${a}`).join('\n')}\n`);

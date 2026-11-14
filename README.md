@@ -10,7 +10,7 @@ Server), and ready-made **portable USB bundles**.
 <p align="center">
   <img alt="version" src="https://img.shields.io/badge/version-1.0.0-22c55e?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" />
-  <img alt="tests" src="https://img.shields.io/badge/tests-249%20passing-22c55e?style=flat-square" />
+  <img alt="tests" src="https://img.shields.io/badge/tests-255%20passing-22c55e?style=flat-square" />
   <img alt="platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Android-0ea5e9?style=flat-square" />
   <img alt="no cloud" src="https://img.shields.io/badge/cloud-not%20required-64748b?style=flat-square" />
 </p>
@@ -53,7 +53,7 @@ uh import --bundle ./backup.uhbundle   # verify-then-commit; never overwrites
 > workspace bundles ([ADR-011](docs/adr/ADR-011-workspace-bundles.md)); stage S4 (the Android
 > leg) is outstanding and requires the physical device. Still deliberately out of scope:
 > hardening soak (Phase 6), the update system, and terminal execution (hard-disabled).
-> Automated suite: 249 tests passing on Windows
+> Automated suite: 255 tests passing on Windows
 > (`node --test tests/*.test.mjs`); Android JVM suite 270/270 across both flavors. Verification
 > status per platform is recorded honestly in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md):
 > **Windows x64 smoke-executed (14/15; stage 10 blocked by the provider account's own quota —
@@ -81,13 +81,28 @@ Select the active harness three ways (in precedence order):
 ```bash
 uh serve --adapter omniroute            # 1. CLI flag
 UH_ADAPTER=claude-code uh serve         # 2. environment variable
-# 3. data/config/config.json → { "adapter": { "harness": "gemini-cli" } }
+uh config set adapter.harness omniroute # 3. portable config (no hand-editing JSON)
 ```
 
-`uh adapters` lists the registered adapters and the active one. Per-adapter settings live in
-`config.json` (`adapter.omniroute.baseUrl`, `adapter.claudeCode.command`, …) with
+`uh adapters` lists the registered adapters and the active one. Per-adapter settings are managed
+with `uh config` (`adapter.omniroute.baseUrl`, `adapter.claudeCode.command`, …) with
 `UH_OMNIROUTE_*` / `UH_OPENAI_*` / `UH_CLAUDE_*` / `UH_GEMINI_*` environment overrides. API keys
-are never stored in the portable config — use the OS secure store or environment variables.
+are never stored in the portable config: point `adapter.<name>.apiKeyRef` at a name in the OS
+secure store, or use environment variables.
+
+### Resilience chain
+
+One dead gateway does not kill the node. Configure launch-time fallbacks and a task that cannot
+reach the primary adapter transparently runs on the next one:
+
+```bash
+uh config set adapter.harnessChain '["deepseek","omniroute"]'
+uh serve --adapter deepseek     # if dsh cannot start, tasks fall through to omniroute
+```
+
+The node logs which adapter served each task; `uh connect status` (or `node.status` over the
+protocol) reports the active adapter and the configured chain. With no chain configured,
+launch failure fails the task — exactly as before, just logged clearly.
 
 ## Dual-Mode Android app
 
@@ -221,7 +236,7 @@ universal-harness/
 ├── scripts/                 build-desktop / verify-licenses / diagnose-ci / publish-release
 ├── .github/workflows/       CI + automated v* release pipeline
 ├── shared/protocol/         machine-readable protocol contract (JSON Schema)
-├── tests/                   automated suite (249 tests) + protocol validators
+├── tests/                   automated suite (255 tests) + protocol validators
 └── third_party/             vendored components (with their LICENSE files)
 ```
 
@@ -285,6 +300,24 @@ Nothing device-local, secret, regenerable or node-owned ever travels: no secrets
 runtime, no event log, no nested backups. An absolute source path never travels either — the
 recorded root is re-derived on the importing machine. Both commands hold the advisory workspace
 lock, so two Universal Harness commands never mutate one workspace at once.
+
+## Troubleshooting
+
+| Symptom | Cause & fix |
+|---|---|
+| `UH_ROOT_NOT_FOUND` (exit 12) | You are outside a Universal Harness folder. `cd` into the portable root, or `set UH_ROOT=<path>`. On a fresh USB bundle `data/` already exists — do not delete it. |
+| `runtime ... missing` / `uh exec` says `DSH_MISSING` | The pinned runtime is not installed yet: run `uh setup` (downloads + hash-verifies Node and dsh from the manifest). |
+| `RUNTIME_HASH_MISMATCH` | The bundled Node tree changed after install. Never a silent pass — delete `runtime/node` and re-run `uh setup`. |
+| `uh serve` prints nothing on stdout | By design: stdout is the protocol stream. Diagnostics go to stderr and `data/logs/uh.log`. Pipe stdout only into protocol-aware clients. |
+| Adapter "unreachable"/"did not answer" | Start the local router/gateway first, then check `uh config get adapter.omniroute.baseUrl` (OmniRoute default `http://127.0.0.1:8090/v1`, OpenAI-compatible default `http://127.0.0.1:11434/v1`). API keys: `UH_OMNIROUTE_API_KEY` env or `uh config set adapter.omniroute.apiKeyRef <store-name>`. |
+| `uh connect` → `NODE_CERTIFICATE_MISMATCH` | The pinned fingerprint does not match the node. Re-mint with `uh pair --endpoint https://<host>:<port>` and paste the fresh payload (token + pin + identity) into the controller. |
+| Android LAN Remote: "not paired yet" | First connection needs the full pairing payload JSON, not just the token. Paste everything `uh pair` printed. |
+| Android "Node is starting…" stuck | First on-device start stages the JS + rootfs (can take a minute). Check the notification; if it says *failed*, wipe app data and retry, or plug the phone into power — Android may defer background work. |
+| Two machines claim the same workspace | The advisory workspace lock fails closed (`WORKSPACE_LOCKED`). Close the other harness instance; the lock is reclaimed only after a verified reboot/PID-reuse. |
+| Moved the USB drive to another PC | `uh migrate check` then `uh migrate apply` — a backup is taken before any recorded path is rewritten. |
+
+Doctor remains the deep gate: `uh doctor` reports Expected/Actual/Action for every failed check
+and writes a JSON report under `diagnostics/`.
 
 ## Verification levels (never blurred)
 
