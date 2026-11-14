@@ -118,8 +118,8 @@ Verification status: executed against a **Windows desktop node** (localhost TLS)
 and against the **physical moto g 5G plus** (nairo, Android 11 / API 30,
 arm64-v8a) over the real Wi-Fi LAN — **28/28 assertions across both phases,
 0 FAIL, 2026-10-11**; the device node reported `nodeKind=android`. Retained
-transcripts: `diagnostics/gate-f/gatef-state.json.evidence.txt` (desktop) and
-`diagnostics/gate-f/gatef-device-evidence.txt` (device).
+transcripts: `docs/evidence/gatef-state.json.evidence.txt` (desktop) and
+`docs/evidence/gatef-device-evidence.txt` (device).
 
 ## `task-control-experiment.mjs` — audit Phase 0.1 code-execution experiment
 
