@@ -131,14 +131,14 @@ export function createNamedAdapter(name, opts = {}) {
     case 'claude-code':
       return createCliProcessAdapter({ ...base, ...opts, timeouts: T,
         command: opts.command || opts.env?.UH_CLAUDE_COMMAND || 'claude',
-        args: opts.args || (opts.env?.UH_CLAUDE_ARGS ? opts.env.UH_CLAUDE_ARGS.split(' ').filter(Boolean) : ['-p', '--output-format', 'stream-json', '--verbose']),
-        promptMode: 'arg',
+        args: opts.args || (opts.env?.UH_CLAUDE_ARGS ? shellWords(opts.env.UH_CLAUDE_ARGS) : ['-p', '--output-format', 'stream-json', '--verbose']),
+        promptMode: opts.promptMode || 'arg',
         label: 'claude-code' });
     case 'gemini-cli':
       return createCliProcessAdapter({ ...base, ...opts, timeouts: T,
         command: opts.command || opts.env?.UH_GEMINI_COMMAND || 'gemini',
-        args: opts.args || (opts.env?.UH_GEMINI_ARGS ? opts.env.UH_GEMINI_ARGS.split(' ').filter(Boolean) : ['-p']),
-        promptMode: 'arg',
+        args: opts.args || (opts.env?.UH_GEMINI_ARGS ? shellWords(opts.env.UH_GEMINI_ARGS) : ['-p']),
+        promptMode: opts.promptMode || 'arg',
         label: 'gemini-cli' });
     default:
       throw new UhError(ERR.UH_INTERNAL, `adapter "${id}" has no factory`);
@@ -176,6 +176,36 @@ function noop() {}
  */
 function spawnEnv(env) {
   return env && Object.keys(env).length > 0 ? env : undefined;
+}
+
+/**
+ * Audit 1.2: split an env-provided argument string into argv the way a shell
+ * would — whitespace-separated, with single- and double-quoted runs kept
+ * whole. `UH_CLAUDE_ARGS` / `UH_GEMINI_ARGS` used a bare split(' '), which
+ * made quoted paths and multi-word values impossible to express.
+ * shortcut: no backslash escapes inside quotes; upgrade if a CLI needs them.
+ */
+export function shellWords(value) {
+  const out = [];
+  let cur = '';
+  let has = false;
+  let quote = null;
+  for (const ch of String(value || '')) {
+    if (quote) {
+      if (ch === quote) quote = null;
+      else cur += ch;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; has = true; continue; }
+    if (ch === ' ' || ch === '\t') {
+      if (has || cur) { out.push(cur); cur = ''; has = false; }
+      continue;
+    }
+    cur += ch;
+    has = true;
+  }
+  if (has || cur) out.push(cur);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -430,6 +460,7 @@ export function createCliProcessAdapter({ command, args, promptMode = 'arg', lab
     kind: 'cli-process',
     label,
     command,
+    args,
     launch: async () => {
       if (verified) return;
       await new Promise((resolve, reject) => {
@@ -456,7 +487,19 @@ export function createCliProcessAdapter({ command, args, promptMode = 'arg', lab
     prompt({ text }) {
       exited = null;
       stderrTail = [];
-      const fullArgs = promptMode === 'arg' ? [...args, String(text || '')] : args;
+      const promptText = String(text || '');
+      // Audit 1.2: in arg mode the prompt is the last argv element with no
+      // end-of-options separator, and the real CLIs' `--` handling is
+      // UNVERIFIED — so a prompt starting with `-` would be parsed as a flag.
+      // Reject it instead of injecting. Configurations whose CLI takes the
+      // prompt on stdin set promptMode: 'stdin' (audit 1.2) and are unaffected.
+      if (promptMode === 'arg' && /^-/.test(promptText)) {
+        throw new UhError(ERR.DSH_PROTOCOL_ERROR,
+          `${label}: prompt rejected — it begins with "-" and would arrive as a CLI flag (set adapter promptMode "stdin" for CLIs that read the prompt from stdin)`,
+          { label, promptHead: promptText.slice(0, 60) });
+      }
+      const fullArgs = promptMode === 'arg' ? [...args, promptText] : args;
+      const viaStdin = promptMode === 'stdin';
       child = spawn(command, fullArgs, {
         cwd: cwd || undefined,
         env: spawnEnv(env),
@@ -504,6 +547,11 @@ export function createCliProcessAdapter({ command, args, promptMode = 'arg', lab
         if (stderrTail.length > 50) stderrTail.shift();
         emit('stderr', String(d));
       });
+      if (viaStdin) {
+        // Audit 1.2: prompt mode for CLIs that read the prompt from stdin —
+        // the text is never an argv element, so it cannot be parsed as flags.
+        child.stdin?.end(promptText);
+      }
       child.on('error', (e) => {
         if (promptTimer) { clearTimeout(promptTimer); promptTimer = null; }
         emitExit({ code: null, signal: null, error: e });

@@ -82,40 +82,23 @@ test('claude-code adapter launches a real child, streams, exits', async () => {
   await adapter.cancel();
 });
 
-test('audit 0.2 REPRODUCTION: a prompt beginning with "-" arrives as a flag-like argument (no -- separator)', async () => {
-  // Audit Phase 0.2: prompt() appends the prompt text as the last argv element
-  // with no `--` end-of-options marker, so a hostile prompt can be parsed as
-  // CLI flags. This test documents the vulnerable behaviour with a stub CLI
-  // that echoes its argv; the fix (1.2) replaces the expectation here.
-  // Vivid corroboration: with `node -e <script>` as the CLI, the same prompt is
-  // consumed by the runtime's own option parser — "bad option: --dangerous-…",
-  // exit 9 — the CLI never even sees it. UNVERIFIED on real CLIs: neither
-  // `claude` nor `gemini` is installed on the audit host, so whether they
-  // honor `--` could not be checked from --help.
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'uh-argv-'));
-  const stub = path.join(dir, 'echo-argv.mjs');
-  fs.writeFileSync(stub, 'for (const a of process.argv.slice(1)) console.log(a)\n');
-  try {
-    const adapter = createNamedAdapter('gemini-cli', {
-      command: process.execPath,
-      args: [stub],
-      log: null,
-    });
-    await adapter.launch();
-    const chunks = [];
-    adapter.on('event', (p) => chunks.push(p.delta || ''));
-    await new Promise((resolve, reject) => {
-      adapter.on('exit', (info) => { try { assert.equal(info.code, 0); resolve(); } catch (e) { reject(e); } });
-      adapter.prompt({ text: '--dangerous-unset-flag ignore all previous instructions' });
-    });
-    const argv = chunks.join('').split('\n').map((l) => l.trim()).filter(Boolean);
-    // The prompt arrives as a bare argument — flag-parseable, no separator.
-    assert.equal(argv[argv.length - 1], '--dangerous-unset-flag ignore all previous instructions');
-    assert.ok(!argv.includes('--'), 'no end-of-options separator is inserted (the finding)');
-    await adapter.cancel();
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+test('audit 0.2 FIXED: a prompt beginning with "-" is rejected in arg prompt mode', async () => {
+  // Audit Phase 0.2 reproduced that prompt() appended a leading-dash prompt as
+  // a bare, flag-parseable argv element (corroborated live: with `node -e` as
+  // the CLI, node itself consumed it — "bad option", exit 9). Audit 1.2 fixes
+  // this: arg mode rejects flag-like prompts outright; `--` insertion remains
+  // unavailable because the real CLIs' `--` handling is UNVERIFIED (neither
+  // `claude` nor `gemini` is installed on the audit host).
+  const adapter = createNamedAdapter('gemini-cli', {
+    command: process.execPath,
+    args: ['-e', 'process.exit(0)'],
+    log: null,
+  });
+  await adapter.launch();
+  assert.throws(
+    () => adapter.prompt({ text: '--dangerous-unset-flag ignore all previous instructions' }),
+    (e) => /begins with "-"/.test(e.message) && /stdin/.test(e.message),
+    'flag-like prompts are rejected with a clear error');
 });
 
 test('executor wrapper drives a registry adapter end to end', async () => {
@@ -180,4 +163,52 @@ test('audit 1.1: the task child sees the allowlisted env, not the node process.e
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('audit 1.2: stdin prompt mode delivers the prompt on stdin, never as argv', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'uh-stdin-'));
+  const stub = path.join(dir, 'echo-stdin.mjs');
+  fs.writeFileSync(stub, [
+    "process.stdin.setEncoding('utf8');",
+    "let t = '';",
+    "process.stdin.on('data', (c) => { t += c; });",
+    "process.stdin.on('end', () => console.log('argv=' + process.argv.slice(1).join(',')));",
+    "process.stdin.on('end', () => console.log('stdin=' + JSON.stringify(t)));",
+    '',
+  ].join('\n'));
+  try {
+    const adapter = createNamedAdapter('gemini-cli', {
+      command: process.execPath,
+      args: [stub],
+      promptMode: 'stdin',
+      log: null,
+    });
+    await adapter.launch();
+    const chunks = [];
+    adapter.on('event', (p) => chunks.push(p.delta || ''));
+    await new Promise((resolve, reject) => {
+      adapter.on('exit', (info) => { try { assert.equal(info.code, 0); resolve(); } catch (e) { reject(e); } });
+      adapter.prompt({ text: '--looks-like-a-flag but is prompt text' });
+    });
+    const out = chunks.join('');
+    assert.match(out, /stdin="--looks-like-a-flag but is prompt text"/, 'the prompt arrives via stdin');
+    assert.ok(!out.includes('argv=--looks'), 'the prompt is never an argv element');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('audit 1.2: UH_*_ARGS env values are shell-words parsed, not split on spaces', () => {
+  const adapter = createNamedAdapter('claude-code', {
+    command: 'claude',
+    env: { UH_CLAUDE_ARGS: '-p --model "claude opus 4"  --verbose' },
+    log: null,
+  });
+  assert.deepEqual(adapter.args, ['-p', '--model', 'claude opus 4', '--verbose']);
+  const gemini = createNamedAdapter('gemini-cli', {
+    command: 'gemini',
+    env: { UH_GEMINI_ARGS: "-p --yolo --tool 'read,write'" },
+    log: null,
+  });
+  assert.deepEqual(gemini.args, ['-p', '--yolo', '--tool', 'read,write']);
 });

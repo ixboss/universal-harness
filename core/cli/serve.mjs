@@ -242,6 +242,9 @@ function adapterOptionsFor(name, a, apiKeys = {}) {
     apiKey: apiKeys[keyName] || null,
     command: section?.command || null,
     args: Array.isArray(section?.args) ? section.args : null,
+    // Audit 1.2: 'stdin' selects the prompt-over-stdin path for CLIs that
+    // support it; the default 'arg' rejects flag-like prompts.
+    promptMode: section?.promptMode === 'stdin' ? 'stdin' : null,
     apiKeyRef: section?.apiKeyRef || null,
   };
 }
