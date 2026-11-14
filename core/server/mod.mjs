@@ -55,6 +55,15 @@ export function createNodeServer({
   nodeDescriptor = null,
   // Optional adapter description for node.status ({ active, chain }).
   nodeInfo = null,
+  // Audit 1.6: an unauthenticated connection must not live forever. The
+  // deadline bounds node.hello + auth.connect/device.pair; after that the
+  // connection is dropped. Failures are tracked per remote address so a
+  // repeat offender is refused outright (backoff) instead of being able to
+  // grind the listener. `nowMs` is injectable so tests drive the clock.
+  preAuthTimeoutMs = 30_000,
+  authFailureLimit = 8,
+  authFailureWindowMs = 60_000,
+  nowMs = null,
 }) {
   const descriptor = resolveNodeDescriptor(nodeDescriptor);
   // connectionId -> connection state
@@ -82,6 +91,37 @@ export function createNodeServer({
   const startedAt = new Date().toISOString();
 
   let connectionSeq = 0;
+
+  // Audit 1.6: pre-authentication hardening state.
+  const clock = nowMs || (() => Date.now());
+  // remote address -> timestamps of failed auth attempts (auth.connect /
+  // device.pair). Pruned against authFailureWindowMs on every check.
+  const authFailures = new Map();
+  let preAuthDrops = 0;
+  let backoffRefusals = 0;
+
+  function remoteAddressOf(transport) {
+    // "tls:1.2.3.4:5678" / "loopback:127.0.0.1:5" → the address without the
+    // port; "memory" and friends stay whole. A per-connection port would make
+    // the backoff key per-connection, defeating the point.
+    const desc = String(transport.describe?.() || transport.name || 'unknown');
+    const m = desc.match(/^(.*):(\d+)$/);
+    return m ? m[1] : desc;
+  }
+
+  function recordAuthFailure(address) {
+    const now = clock();
+    const list = (authFailures.get(address) || []).filter((t) => now - t < authFailureWindowMs);
+    list.push(now);
+    authFailures.set(address, list);
+  }
+
+  function isBackedOff(address) {
+    const now = clock();
+    const list = (authFailures.get(address) || []).filter((t) => now - t < authFailureWindowMs);
+    if (list.length) authFailures.set(address, list); else authFailures.delete(address);
+    return list.length >= authFailureLimit;
+  }
 
   function info(msg) { log?.info?.(`[node] ${msg}`); }
   function warn(msg) { log?.warn?.(`[node] ${msg}`); }
@@ -574,6 +614,17 @@ export function createNodeServer({
   // ------------------------------------------------------------ connections
   function handleConnection(transport) {
     const connectionId = ++connectionSeq;
+    const remote = remoteAddressOf(transport);
+
+    // Audit 1.6: a remote with too many recent auth failures is refused
+    // outright (per-remote-address backoff).
+    if (isBackedOff(remote)) {
+      backoffRefusals++;
+      warn(`connection ${connectionId} refused: auth backoff for ${remote}`);
+      try { transport.close(); } catch {}
+      return connectionId;
+    }
+
     const state = {
       id: connectionId,
       transport,
@@ -581,9 +632,22 @@ export function createNodeServer({
       deviceId: null,
       scopes: [],
       challenge: auth.newChallenge(),
+      preAuthTimer: null,
     };
     connections.set(connectionId, state);
     info(`connection ${connectionId} opened (${transport.describe()})`);
+
+    // Audit 1.6: bounded pre-authentication window — node.hello plus
+    // auth.connect or device.pair must complete in time or the socket goes.
+    if (preAuthTimeoutMs > 0) {
+      state.preAuthTimer = setTimeout(() => {
+        if (state.authenticated) return;
+        preAuthDrops++;
+        warn(`connection ${connectionId} dropped: not authenticated within ${preAuthTimeoutMs}ms`);
+        try { transport.close(); } catch {}
+      }, preAuthTimeoutMs);
+      if (typeof state.preAuthTimer.unref === 'function') state.preAuthTimer.unref();
+    }
 
     // The node greets first: identity, version range, the operation set it
     // actually serves, and the challenge nonce.
@@ -603,6 +667,7 @@ export function createNodeServer({
 
     transport.onMessage((env) => onMessage(state, env));
     transport.onClose((reason) => {
+      if (state.preAuthTimer) { clearTimeout(state.preAuthTimer); state.preAuthTimer = null; }
       connections.delete(connectionId);
       subscribers.delete(transport);
       info(`connection ${connectionId} closed (${String(reason).slice(0, 120)})`);
@@ -639,6 +704,7 @@ export function createNodeServer({
   function authenticateConnection(connectionId, record) {
     const state = connections.get(connectionId);
     if (!state) return false;
+    if (state.preAuthTimer) { clearTimeout(state.preAuthTimer); state.preAuthTimer = null; }
     state.authenticated = true;
     state.deviceId = record.deviceId;
     state.scopes = record.scopes || [];
@@ -771,9 +837,11 @@ export function createNodeServer({
       case KINDS.AUTH_CONNECT: {
         const result = auth.verifyChallenge({ deviceId: payload.deviceId, sigB64: payload.sigB64, challenge: state.challenge });
         if (!result.ok) {
+          recordAuthFailure(remoteAddressOf(state.transport));
           send(transport, errorEnvelope(requestId, mapPairFailure(result.code), mapPairFailureMessage(result.code)));
           return;
         }
+        if (state.preAuthTimer) { clearTimeout(state.preAuthTimer); state.preAuthTimer = null; }
         // The nonce is single-use: once it has authenticated this connection it
         // can never sign another one, even captured in transit on this wire.
         state.challenge = null;
@@ -803,9 +871,11 @@ export function createNodeServer({
           token: payload.pairingToken,
         });
         if (!result.ok) {
+          recordAuthFailure(remoteAddressOf(state.transport));
           send(transport, errorEnvelope(requestId, mapPairFailure(result.code), mapPairFailureMessage(result.code)));
           return;
         }
+        if (state.preAuthTimer) { clearTimeout(state.preAuthTimer); state.preAuthTimer = null; }
         state.authenticated = true;
         state.deviceId = result.deviceId;
         state.scopes = result.grantedScopes;
