@@ -123,7 +123,7 @@ function walk(dir) {
 
 test('audit 1.1: the task environment allowlist drops unrelated secrets, keeps runtime + provider vars', () => {
   const allow = taskEnvAllowlist({
-    PATH: '/usr/bin', SystemRoot: 'C:\Windows', COMSPEC: 'cmd.exe',
+    PATH: '/usr/bin', SystemRoot: 'C:\\Windows', COMSPEC: 'cmd.exe',
     HOME: '/home/op', TEMP: '/tmp',
     DSH_HOME: '/home/op/.dsh',
     HTTP_PROXY: 'http://proxy:8080', NO_PROXY: 'localhost',
@@ -133,7 +133,7 @@ test('audit 1.1: the task environment allowlist drops unrelated secrets, keeps r
     GITHUB_TOKEN: 'ghp_x', STRIPE_KEY: 'sk_live_x',
   });
   assert.equal(allow.PATH, '/usr/bin');
-  assert.equal(allow.SystemRoot, 'C:\Windows');
+  assert.equal(allow.SystemRoot, 'C:\\Windows');
   assert.equal(allow.DSH_HOME, '/home/op/.dsh');
   assert.equal(allow.HTTP_PROXY, 'http://proxy:8080');
   assert.equal(allow.DEEPSEEK_API_KEY, 'sk-provider');

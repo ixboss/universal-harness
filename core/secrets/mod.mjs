@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { UhError, ERR } from '../errors/mod.mjs';
+import { UhError, ERR, redact } from '../errors/mod.mjs';
 import { devicePaths } from '../paths/mod.mjs';
 import { isWindows } from '../platform/mod.mjs';
 

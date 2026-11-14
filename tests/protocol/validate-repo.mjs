@@ -68,7 +68,7 @@ for (const f of allFiles.filter((f) => f.endsWith('.md'))) {
 // non-real values like sk-deadbeef…); they are the reason the scanner exists, not a violation.
 const secretPatterns = [
   /-----BEGIN (EC |RSA |DSA |OPENSSH )?PRIVATE KEY-----/i,
-  /(?:api[_-]?key|secret|password|token|passwd)\s*[:=]\s*['"][A-Za-z0-9_\-]{16,}['"]/i,
+  /(?:api[_-]?key|secret|password|token|passwd)\s*[:=]\s*['"][A-Za-z0-9_-]{16,}['"]/i,
 ];
 for (const f of allFiles) {
   // Mobile-Harness upstream test fixtures (imported Phase 3, android/app/src/test/) use

@@ -60,6 +60,8 @@ export function validateMigration(store, { to }) {
  * @param {Object} opts { store, root, p, log, force }
  * @returns {Object} migration record
  */
+function consoleShim() { return { info() {}, warn() {}, debug() {}, error() {} }; }
+
 export async function applyMigration({ store, root, p, log = consoleShim(), force = false }) {
   const { moved, from, to } = checkMove(store, { root });
   if (!moved) return { moved: false, note: 'workspace root unchanged; nothing to migrate' };
