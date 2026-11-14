@@ -6,6 +6,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.cyclonedx.bom") // Audit 2.5: CycloneDX SBOM (version pinned in the root block)
 }
 
 val testSecrets = Properties().apply {
