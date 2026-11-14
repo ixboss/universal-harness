@@ -234,13 +234,44 @@ export function writeInstallState(dir, meta) {
   fs.writeFileSync(path.join(dir, INSTALLED_STATE), JSON.stringify({ ...meta, writtenAt: new Date().toISOString() }, null, 2));
 }
 
-/** Throw when the runtime is unusable, carrying the first failed check. */
+/**
+ * Throw when the runtime is unusable, carrying the first failed check.
+ *
+ * The adapter calls this before *every* launch, and `rm.status()` hashes the
+ * entire Node tree (thousands of files) and spawns `node -v` — seconds of
+ * blocking work per task. Verification is therefore memoized per process on a
+ * stamp of the install-state / node-binary / dsh-directory mtimes: anything
+ * that changes the runtime (re-running `uh setup`, npm activity under
+ * runtime/dsh) changes the stamp and forces a fresh verification.
+ */
+const verifyCache = { key: null, result: null };
 export async function requireRuntime(rm) {
+  const key = runtimeStamp(rm);
+  if (key && verifyCache.key === key) return verifyCache.result;
   const { checks, ok } = await rm.status();
+  const result = { checks, ok };
+  if (key && ok) { verifyCache.key = key; verifyCache.result = result; }
   if (!ok) {
     const first = checks.find((c) => c.status === 'fail');
     const code = first.id.startsWith('dsh.') ? ERR.DSH_MISSING : ERR.RUNTIME_MISSING;
     throw new UhError(code, `${first.label}: expected ${first.expected}, actual ${first.actual}`,
       { check: first.id }, first.action);
   }
+  return result;
+}
+
+/** Cheap change-detector for the installed runtime (mtime stamp), or null. */
+function runtimeStamp(rm) {
+  try {
+    const parts = [];
+    const bin = typeof rm.nodeBinary === 'function' ? rm.nodeBinary() : null;
+    if (bin) parts.push(fs.statSync(bin).mtimeMs);
+    const dshDir = typeof rm.dshPackageDir === 'function' ? rm.dshPackageDir() : null;
+    if (dshDir) {
+      // The dsh package directory's own mtime covers install/reinstall; its
+      // node_modules subtree is immutable after an exact-pin install.
+      parts.push(fs.statSync(dshDir).mtimeMs);
+    }
+    return parts.length ? parts.join('|') : null;
+  } catch { return null; }
 }

@@ -182,12 +182,24 @@ export function createStreamTransport({ input, output, name = 'stream' }) {
     if (writing || queue.length === 0) return;
     writing = true;
     const frame = queue.shift();
-    const written = () => { writing = false; pump(); };
+    // The completion callback AND the drain event can both fire for a single
+    // write; without a settle guard the second one released `writing` while
+    // the next frame was still in flight, allowing concurrent writes (and
+    // therefore out-of-order frames) under backpressure.
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      writing = false;
+      pump();
+    };
+    const onDrain = () => done();
     const ok = output.write(frame, (err) => {
       if (err) notify.error(new TransportError('write', err.message));
-      written();
+      done();
     });
-    if (!ok) output.once('drain', written);
+    if (!ok) output.once('drain', onDrain);
+    else output.removeListener('drain', onDrain);
   }
 
   const decoder = createFrameDecoder(notify.message, (e) => {

@@ -214,3 +214,63 @@ export async function cmdImport(args, { root, p, log }) {
     return 1;
   }
 }
+
+/**
+ * `uh config` — read and write the portable config without hand-editing JSON.
+ *
+ *   uh config list                       full effective config (secrets never shown)
+ *   uh config get adapter.harness        one dotted path
+ *   uh config set adapter.harness omniroute
+ *   uh config set adapter.harnessChain '["deepseek","omniroute"]'   JSON value
+ *
+ * Nested `set` writes are deep-merged (core/config merge), so setting
+ * adapter.omniroute.baseUrl preserves the rest of the section.
+ */
+export async function cmdConfig(args, { root, p, log }) {
+  const { createConfig } = await import('../config/mod.mjs');
+  const config = createConfig({ root, p });
+  const sub = args[0] || 'list';
+
+  if (sub === 'list') {
+    console.log(JSON.stringify(config.load(), null, 2));
+    return 0;
+  }
+
+  const dotted = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+  const setPath = (obj, path, value) => {
+    const keys = path.split('.');
+    const out = structuredClone(obj);
+    let cur = out;
+    for (const k of keys.slice(0, -1)) {
+      if (cur[k] == null || typeof cur[k] !== 'object') cur[k] = {};
+      cur = cur[k];
+    }
+    cur[keys[keys.length - 1]] = value;
+    return out;
+  };
+
+  if (sub === 'get') {
+    const keyPath = args[1];
+    if (!keyPath) { console.log('usage: uh config get <dotted.path>'); return 2; }
+    const value = dotted(config.load(), keyPath);
+    if (value === undefined) { console.log(`(unset) ${keyPath}`); return 1; }
+    console.log(typeof value === 'string' ? value : JSON.stringify(value, null, 2));
+    return 0;
+  }
+
+  if (sub === 'set') {
+    const keyPath = args[1];
+    const raw = args[2];
+    if (!keyPath || raw === undefined) { console.log('usage: uh config set <dotted.path> <value>'); return 2; }
+    if (keyPath === 'schemaVersion') { console.log('refusing to change schemaVersion'); return 2; }
+    let value;
+    try { value = JSON.parse(raw); } catch { value = raw; } // bare strings stay strings
+    const next = config.save(setPath(config.load(), keyPath, value));
+    console.log(`set ${keyPath} = ${JSON.stringify(value)}`);
+    console.log(`config written: ${config.configPath}`);
+    return 0;
+  }
+
+  console.log('usage: uh config list | get <dotted.path> | set <dotted.path> <value>');
+  return 2;
+}

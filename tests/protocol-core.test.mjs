@@ -122,6 +122,7 @@ test('advertisement: only implemented operations are advertised', () => {
   assert.deepEqual([...ADVERTISED_OPERATIONS].sort(), [
     'auth.connect', 'device.list', 'device.pair', 'device.revoke',
     'diagnostics.run', 'file.browse', 'file.read', 'file.write',
+    'node.status',
     'project.create', 'project.list', 'project.open',
     'session.create', 'session.list', 'session.read', 'session.replay', 'session.resume',
     'task.cancel', 'task.history', 'task.list', 'task.start',

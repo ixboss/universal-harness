@@ -39,8 +39,10 @@ export function createLogger({ logDir, level = 'info', console: useConsole = tru
     }
     if (useConsole && (LEVELS[levelName] >= minLevel)) {
       const text = rec.fields ? `${rec.msg} ${JSON.stringify(rec.fields)}` : rec.msg;
-      const stream = levelName === 'error' || levelName === 'warn' ? process.stderr : process.stdout;
-      stream.write(`[${levelName}] ${text}\n`);
+      // Everything goes to stderr: stdout is data/protocol surface (uh serve
+      // speaks NDJSON on it; `uh pair` prints exactly one JSON document). A
+      // single info line on stdout used to poison the frame decoder.
+      process.stderr.write(`[${levelName}] ${text}\n`);
     }
     return rec;
   }

@@ -7,10 +7,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRuntimeManager } from '../runtime/mod.mjs';
 import { createAdapter, newSessionId } from '../adapter/mod.mjs';
+import { createNamedAdapter, adapterChainFromConfig, createResilientAdapter } from '../adapter/registry.mjs';
+import { resolveAdapterName } from './serve.mjs';
 import { createSessionStore, createSessionIndex } from '../sessions/mod.mjs';
 import { createShutdownManager } from '../shutdown/mod.mjs';
 import { platformInfo } from '../platform/mod.mjs';
-import { UhError, ERR } from '../errors/mod.mjs';
+import { UhError, ERR, redact } from '../errors/mod.mjs';
 import os from 'node:os';
 
 const SMOKE_CHECK_TIMEOUT = 120_000;
@@ -27,7 +29,16 @@ export async function cmdExec(args, { root, p, log }) {
   const rm = createRuntimeManager({ root });
   const shutdown = createShutdownManager({ log });
 
-  const adapter = createAdapter({ rm, log });
+  // Same selection contract as `uh serve`: --adapter flag > UH_ADAPTER env >
+  // config, with the harness chain applied on launch failure.
+  const { createConfig } = await import('../config/mod.mjs');
+  const config = createConfig({ root, p }).load();
+  const adapterName = resolveAdapterName(args, config);
+  const chain = adapterChainFromConfig(adapterName, config);
+  const adapter = chain.length > 1
+    ? createResilientAdapter({ names: chain, resolveOptions: () => ({ rm, cwd: root, env: process.env }), log })
+    : createNamedAdapter(adapterName, { rm, log, cwd: root, env: process.env });
+  if (adapterName !== 'deepseek') log.info(`exec via harness adapter: ${adapterName}`);
   registerProcessExit(shutdown, adapter);
 
   await adapter.launch();
@@ -259,7 +270,7 @@ async function streamTurnToConsole(adapter, { timeoutMs }) {
       const data = payload?.event?.data || {};
       if (type === 'assistant/attempt' && Array.isArray(data.stream)) {
         for (const chunk of data.stream) {
-          if (chunk?.chunk?.type === 'text' && chunk.chunk.text) process.stdout.write(chunk.chunk.text);
+          if (chunk?.chunk?.type === 'text' && chunk.chunk.text) process.stdout.write(redact(chunk.chunk.text));
         }
       } else if (type === 'turn/end') {
         const kind = data?.reason?.kind || 'completed';

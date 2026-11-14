@@ -53,6 +53,8 @@ export function createNodeServer({
   // real host declares them here (brief §8). Each defaults to the observed
   // environment when unset, so desktop behaviour is unchanged.
   nodeDescriptor = null,
+  // Optional adapter description for node.status ({ active, chain }).
+  nodeInfo = null,
 }) {
   const descriptor = resolveNodeDescriptor(nodeDescriptor);
   // connectionId -> connection state
@@ -75,6 +77,9 @@ export function createNodeServer({
   // survives restarts for as long as the event log retains the creating
   // record (the repository's durability model — no second idempotency store).
   const idempotency = new Map();
+  // node.status: process start time + whatever the caller (serve.mjs) chose to
+  // surface about the harness adapter configuration.
+  const startedAt = new Date().toISOString();
 
   let connectionSeq = 0;
 
@@ -198,11 +203,6 @@ export function createNodeServer({
       ...(clientRequestId ? { clientRequestId, requestHash } : {}),
     };
 
-    const record = events.tasksSnapshot().find((t) => t.taskId === task.taskId);
-    if (record) {
-      return { ok: false, code: 'CONFLICT', reason: 'task id collision; retry the request' };
-    }
-
     // Project -> Session -> Task must stay unambiguous: a session a task
     // references becomes a first-class session index entry (adopted with this
     // project) even when the client supplied an id the node had not minted.
@@ -256,7 +256,7 @@ export function createNodeServer({
       onExit: () => {},
     });
 
-    liveTasks.set(task.taskId, { task, handle, subscribers: new Set(connection ? [connection] : []) });
+    liveTasks.set(task.taskId, { task, handle });
 
     // queued -> starting -> running. Each step is a separate durable commit so
     // a crash between them leaves an unambiguous state.
@@ -731,6 +731,35 @@ export function createNodeServer({
         return;
       }
 
+      case KINDS.NODE_STATUS: {
+        // Live node health for controllers (uh connect status, the Android
+        // controller): version/identity/uptime plus the task and connection
+        // counts. Read-only by construction — nothing here accepts input that
+        // could steer the node.
+        const caps = capabilities();
+        const recorded = events.tasksSnapshot();
+        send(transport, responseEnvelope(requestId, KINDS.NODE_STATUS, {
+          nodeId: identity.nodeId,
+          uhVersion,
+          platform: caps.platform,
+          architecture: caps.architecture,
+          nodeKind: caps.nodeKind ?? null,
+          protocolVersion: PROTOCOL_VERSION,
+          startedAt,
+          uptimeSeconds: Math.floor((Date.now() - Date.parse(startedAt)) / 1000),
+          connections: connections.size,
+          tasks: {
+            live: liveTasks.size,
+            recorded: recorded.length,
+          },
+          adapter: {
+            active: nodeInfo?.active ?? null,
+            chain: Array.isArray(nodeInfo?.chain) ? nodeInfo.chain.slice() : [],
+          },
+        }));
+        return;
+      }
+
       case KINDS.AUTH_CONNECT: {
         const result = auth.verifyChallenge({ deviceId: payload.deviceId, sigB64: payload.sigB64, challenge: state.challenge });
         if (!result.ok) {
@@ -1016,6 +1045,19 @@ export function createNodeServer({
     capabilities,
     startTask,
     cancelTask,
+    /**
+     * Tear down every live task executor. Called by `uh serve` on transport
+     * close / signal so harness child processes (dsh, claude, gemini) never
+     * outlive the node — SIGTERM (bounded) escalation lives in the executor.
+     */
+    async shutdown() {
+      const ids = [...liveTasks.keys()];
+      for (const taskId of ids) {
+        try { await cancelTask(taskId, { reason: 'node shutdown' }); }
+        catch { /* the executor's exit path settles the task regardless */ }
+      }
+      return ids.length;
+    },
     get connections() { return connections.size; },
     get liveTaskCount() { return liveTasks.size; },
     get subscriberCount() { return subscribers.size; },

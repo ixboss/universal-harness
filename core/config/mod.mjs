@@ -32,6 +32,9 @@ export const DEFAULT_CONFIG = {
     // gemini-cli. Resolved per serve/exec: --adapter flag > UH_ADAPTER env >
     // this value.
     harness: 'deepseek',
+    // Launch-time fallbacks tried in order when the active adapter cannot
+    // start (router down, CLI missing). Empty = fail the task as before.
+    harnessChain: [],
     provider: 'deepseek-official',
     model: 'deepseek-official',
     reasoningEffort: null,
@@ -102,13 +105,20 @@ export function createConfig({ root, p }) {
   return { load, save, setSecret, getSecret, deleteSecret, secretBackendInfo, configPath };
 }
 
-/** Shallow-ish merge that keeps unknown user keys (forward compatibility). */
+/** Deep merge for plain objects: user keys are layered over defaults at any
+ * depth (arrays are replaced wholesale), so `{"adapter":{"omniroute":
+ * {"baseUrl":"…"}}}` no longer wipes the rest of the omniroute section, and
+ * unknown user keys survive for forward compatibility. */
 function merge(base, user) {
   if (!user || typeof user !== 'object') return base;
-  const out = { ...base, ...user };
-  for (const [k, v] of Object.entries(base)) {
-    if (v && typeof v === 'object' && !Array.isArray(v) && user[k] && typeof user[k] === 'object') {
-      out[k] = { ...v, ...user[k] };
+  const out = Array.isArray(base) && Array.isArray(user) ? [...user]
+    : { ...base };
+  for (const [k, v] of Object.entries(user)) {
+    const b = base?.[k];
+    if (v && typeof v === 'object' && !Array.isArray(v) && b && typeof b === 'object' && !Array.isArray(b)) {
+      out[k] = merge(b, v);
+    } else {
+      out[k] = v;
     }
   }
   return out;

@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -34,7 +35,6 @@ class NodeServerService : Service() {
     private var serverJob: Job? = null
     @Volatile private var server: UhNodeServer? = null
     @Volatile private var advertisement: NsdNodeAdvertisement? = null
-    @Volatile private var endpoint: NodeEndpoint? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -67,12 +67,13 @@ class NodeServerService : Service() {
             server = node
             try {
                 val ep = node.start()
-                endpoint = ep
+                endpointState.value = ep
                 val nsd = NsdNodeAdvertisement(this@NodeServerService)
                 nsd.register(NsdNodeAdvertisement.serviceName(ep.nodeId), ep.port)
                 advertisement = nsd
                 notify("Universal Harness node ready", "Listening on :${ep.port} • ${ep.nodeId.take(14)}…")
             } catch (e: Throwable) {
+                endpointState.value = null
                 notify("Universal Harness node failed", e.message ?: "see logs", important = true)
             }
         }
@@ -84,6 +85,7 @@ class NodeServerService : Service() {
         runCatching { server?.stop() }
         server = null
         serverJob?.cancel()
+        endpointState.value = null
     }
 
     override fun onDestroy() {
@@ -126,8 +128,18 @@ class NodeServerService : Service() {
         private const val NODE_NOTIFICATION_ID = 7437
         private const val TAG = "UhNodeService"
 
-        /** The endpoint the node announced, or null if it has not bound yet. */
-        @Volatile var endpoint: NodeEndpoint? = null
+        /**
+         * Observable endpoint state: null until the node has bound, null again
+         * after stop/failure. The dual-mode UI collects this flow, so the pane
+         * tracks start/stop/failure without stale statics. Kept in the
+         * companion so non-Compose readers (tests, diagnostics) see the same
+         * truth as the service instance.
+         */
+        val endpointState = MutableStateFlow<NodeEndpoint?>(null)
+
+        /** Convenience for non-Compose readers. */
+        @Deprecated("read endpointState.value instead", ReplaceWith("endpointState.value"))
+        val endpoint: NodeEndpoint? get() = endpointState.value
 
         fun ensureNodeChannel(context: Context) {
             val nm = context.getSystemService(NotificationManager::class.java)

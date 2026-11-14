@@ -144,6 +144,45 @@
         "state": { "type": "string", "description": "Filter to tasks in this state." }
       }
     },
+    "NodeStatusRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "section": { "type": "string", "description": "Optional filter: adapter | tasks | connections." }
+      }
+    },
+    "NodeStatusResponse": {
+      "type": "object",
+      "required": ["nodeId", "uhVersion", "platform", "architecture", "nodeKind", "uptimeSeconds", "connections", "tasks"],
+      "additionalProperties": false,
+      "properties": {
+        "nodeId": { "type": "string" },
+        "uhVersion": { "type": "string" },
+        "platform": { "type": "string" },
+        "architecture": { "type": "string" },
+        "nodeKind": { "type": ["string", "null"] },
+        "protocolVersion": { "type": "string" },
+        "startedAt": { "type": ["string", "null"] },
+        "uptimeSeconds": { "type": "number" },
+        "connections": { "type": "number" },
+        "tasks": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "live": { "type": "number" },
+            "recorded": { "type": "number" }
+          }
+        },
+        "adapter": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "active": { "type": ["string", "null"] },
+            "chain": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
     "TaskListResponse": {
       "type": "object",
       "required": ["tasks"],

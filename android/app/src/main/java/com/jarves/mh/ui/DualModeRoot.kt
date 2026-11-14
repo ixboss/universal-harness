@@ -23,6 +23,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,7 +35,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jarves.mh.runtime.DualModePreferences
 import com.jarves.mh.runtime.LanTarget
 import com.jarves.mh.runtime.OperatingMode
@@ -43,6 +44,7 @@ import com.universalharness.node.NodeServerService
 import com.universalharness.node.PairingPayload
 import com.universalharness.node.UhNodeClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -54,6 +56,10 @@ import kotlinx.coroutines.withContext
  *     ([LanRemotePane], backed by the real [UhNodeClient] TLS + Ed25519 pairing path).
  *   - On-Device Server mode: run the embedded Node.js/PRoot node on this phone
  *     ([OnDeviceServerPane] around [NodeServerService]) plus the full local agent UI.
+ *
+ * The full local agent UI stays mounted in BOTH modes: in on-device mode it
+ * drives the local runtime; in LAN remote mode it remains the familiar offline
+ * surface while the remote pane is the controller surface.
  */
 @Composable
 fun DualModeRoot(appContent: @Composable () -> Unit) {
@@ -73,13 +79,7 @@ fun DualModeRoot(appContent: @Composable () -> Unit) {
             OperatingMode.LAN_REMOTE -> LanRemotePane(prefs)
             OperatingMode.ON_DEVICE_SERVER -> OnDeviceServerPane()
         }
-        // The full local agent UI always stays available underneath the switcher:
-        // in on-device mode it drives the local runtime; in LAN mode it remains the
-        // familiar offline surface (its runtime bridges simply cannot reach a remote
-        // node, so the remote pane is the controller surface).
-        if (mode == OperatingMode.ON_DEVICE_SERVER) {
-            appContent()
-        }
+        appContent()
     }
 }
 
@@ -113,18 +113,20 @@ private fun DualModeSwitcher(selected: OperatingMode, onSelect: (OperatingMode) 
 @Composable
 private fun OnDeviceServerPane() {
     val context = LocalContext.current
-    val endpoint = NodeServerService.endpoint
-    var running by remember { mutableStateOf(endpoint != null) }
-    // Keep the foreground node alive while this mode is on screen; it is also
-    // START_STICKY, so Android restarts it if the process is reclaimed.
+    // The service exposes its endpoint as a StateFlow (null until bound, null
+    // again after stop/failure), so this pane tracks reality instead of a
+    // stale static snapshot.
+    val endpoint by NodeServerService.endpointState.collectAsStateWithLifecycle()
+
     LaunchedEffect(Unit) {
-        if (!running) {
-            context.startForegroundService(
-                Intent(context, NodeServerService::class.java)
-                    .setAction(NodeServerService.ACTION_START),
-            )
-            running = true
-        }
+        // Always (re)assert start: the service is idempotent while running and
+        // START_STICKY across process death. Sending it unconditionally fixes
+        // the case where the node was stopped from the notification and this
+        // pane suppressed the restart.
+        context.startForegroundService(
+            Intent(context, NodeServerService::class.java)
+                .setAction(NodeServerService.ACTION_START),
+        )
     }
 
     Column(
@@ -148,27 +150,26 @@ private fun OnDeviceServerPane() {
                 if (endpoint != null) {
                     val clipboard = LocalClipboardManager.current
                     Text(
-                        "Endpoint: https://<lan-ip>:${endpoint.port}",
+                        "Endpoint: https://<lan-ip>:${endpoint!!.port}",
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    Text("nodeId: ${endpoint.nodeId}", style = MaterialTheme.typography.bodySmall)
+                    Text("nodeId: ${endpoint!!.nodeId}", style = MaterialTheme.typography.bodySmall)
                     Button(onClick = {
                         clipboard.setText(
                             AnnotatedString(
-                                "{\"endpoint\":\"https://<lan-ip>:${endpoint.port}\"," +
-                                    "\"nodeId\":\"${endpoint.nodeId}\",\"port\":${endpoint.port}}",
+                                "{\"endpoint\":\"https://<lan-ip>:${endpoint!!.port}\"," +
+                                    "\"nodeId\":\"${endpoint!!.nodeId}\",\"port\":${endpoint!!.port}}",
                             ),
                         )
                     }) { Text("Copy connection info") }
                 } else {
-                    Text("Node is starting…", style = MaterialTheme.typography.bodySmall)
+                    Text("Node is starting… (runtime staging can take a minute on first run)", style = MaterialTheme.typography.bodySmall)
                 }
                 OutlinedButton(onClick = {
                     context.startService(
                         Intent(context, NodeServerService::class.java)
                             .setAction(NodeServerService.ACTION_STOP),
                     )
-                    running = false
                 }) { Text("Stop node server") }
             }
         }
@@ -178,6 +179,19 @@ private fun OnDeviceServerPane() {
 // ---------------------------------------------------------------------------
 // Mode 1 — LAN Remote Controller
 // ---------------------------------------------------------------------------
+
+/** Map raw connection failures to short, actionable strings. */
+fun lanFailureHint(e: Exception): String = when {
+    e.message?.contains("NODE_CERTIFICATE_MISMATCH") == true ->
+        "The certificate fingerprint does not match — re-check the pin printed by `uh pair` on the node machine."
+    e.message?.contains("not paired yet") == true ->
+        "First connection needs the pairing payload JSON from `uh pair --endpoint …` on the node machine."
+    e is java.net.SocketTimeoutException ->
+        "The node did not answer in time — is it on the same Wi-Fi, and is the port correct?"
+    e is java.net.ConnectException ->
+        "Connection refused — is the node running with `uh serve --listen tls://0.0.0.0:7437`?"
+    else -> e.message ?: e::class.java.simpleName
+}
 
 @Composable
 private fun LanRemotePane(prefs: DualModePreferences) {
@@ -196,6 +210,13 @@ private fun LanRemotePane(prefs: DualModePreferences) {
     var prompt by remember { mutableStateOf("") }
 
     fun log(line: String) { output = output + listOf(line.take(4000)) }
+
+    // The client owns a TLS socket + reader thread: close it when this pane
+    // leaves the composition (mode switch, app exit), not just on manual
+    // disconnect.
+    DisposableEffect(Unit) {
+        onDispose { runCatching { client?.close() } }
+    }
 
     Column(
         modifier = Modifier
@@ -249,7 +270,15 @@ private fun LanRemotePane(prefs: DualModePreferences) {
                                 nodeId = c.nodeId
                                 var t = target ?: LanTarget(host, parsedPort, pin)
                                 if (pairingJson.isNotBlank()) {
-                                    val payload = PairingPayload.parse(pairingJson)
+                                    // Validate the payload BEFORE consuming anything.
+                                    val payload = try {
+                                        PairingPayload.parse(pairingJson)
+                                    } catch (e: Exception) {
+                                        throw IllegalStateException(
+                                            "pairing payload is not valid: ${e.message?.take(160)} — " +
+                                                "copy the whole JSON printed by `uh pair`", e,
+                                        )
+                                    }
                                     val key = DeviceKey.generate()
                                     val reply = c.pair(
                                         key = key,
@@ -258,14 +287,29 @@ private fun LanRemotePane(prefs: DualModePreferences) {
                                         platform = "android",
                                         requestedScopes = listOf("sessions", "tasks", "workspace", "terminal"),
                                     )
+                                    // The payload binds the node's identity fingerprint; verifying
+                                    // the node's signature over our challenge proves we are talking to
+                                    // the node the token was minted for, not an imposter with a
+                                    // different certificate that happens to hold a stolen pin.
+                                    if (!c.verifyNodeIdentity(
+                                            reply.optString("nodeSigB64"),
+                                            reply.optString("nodePublicKeyPem"),
+                                            payload.nodeIdentitySha256,
+                                        )
+                                    ) {
+                                        throw IllegalStateException(
+                                            "the node failed its identity verification — refusing to pair " +
+                                                "(NODE_IDENTITY_MISMATCH)",
+                                        )
+                                    }
+                                    prefs.saveSeedSealed(key.seed)
                                     t = t.copy(
                                         deviceId = reply.optString("deviceId").takeIf { it.isNotBlank() },
-                                        deviceSeedB64 = DualModePreferences.encodeSeed(key.seed),
+                                        deviceSeedB64 = null, // the seed now lives sealed in the keystore
                                     )
                                     log("paired as device ${t.deviceId}")
                                 } else {
-                                    val seed = DualModePreferences.decodeSeed(t.deviceSeedB64.orEmpty())
-                                    val key = seed?.let(DeviceKey::fromSeed)
+                                    val key = prefs.loadSeededKey()
                                         ?: throw IllegalStateException("not paired yet: paste the pairing payload once")
                                     val deviceId = t.deviceId ?: throw IllegalStateException("not paired yet")
                                     c.authenticate(key, deviceId)
@@ -278,7 +322,7 @@ private fun LanRemotePane(prefs: DualModePreferences) {
                             }
                             status = "Connected to $host:$port (node $nodeId)"
                         } catch (e: Exception) {
-                            status = "Failed: ${e.message ?: e::class.java.simpleName}"
+                            status = "Failed: ${lanFailureHint(e)}"
                         }
                     }
                 },
@@ -306,7 +350,8 @@ private fun LanRemotePane(prefs: DualModePreferences) {
                         scope.launch {
                             try {
                                 withContext(Dispatchers.IO) {
-                                    val reply = client!!.request(
+                                    val c = client ?: throw IllegalStateException("not connected")
+                                    val reply = c.request(
                                         "task.start",
                                         buildMap {
                                             sessionId?.let { put("sessionId", it) }
@@ -317,8 +362,9 @@ private fun LanRemotePane(prefs: DualModePreferences) {
                                     log("task started: $taskId")
                                     // A bounded observation loop: the node streams durable
                                     // events; the controller re-reads history to follow the task.
+                                    // delay() (not Thread.sleep) so the shared IO thread stays free.
                                     for (poll in 0 until 30) {
-                                        val history = client!!.request(
+                                        val history = c.request(
                                             "task.history",
                                             mapOf("taskId" to taskId, "limit" to 50),
                                             timeoutMs = 20_000,
@@ -331,11 +377,11 @@ private fun LanRemotePane(prefs: DualModePreferences) {
                                             break
                                         }
                                         if (poll == 29) break
-                                        Thread.sleep(2000)
+                                        delay(2000)
                                     }
                                 }
                             } catch (e: Exception) {
-                                log("error: ${e.message}")
+                                log("error: ${lanFailureHint(e)}")
                             }
                         }
                     },
@@ -344,10 +390,11 @@ private fun LanRemotePane(prefs: DualModePreferences) {
                     scope.launch {
                         withContext(Dispatchers.IO) {
                             runCatching {
-                                sessionId = client!!.request("session.create", emptyMap())
+                                val c = client ?: throw IllegalStateException("not connected")
+                                sessionId = c.request("session.create", emptyMap())
                                     .optJSONObject("payload")?.optString("sessionId")
                                 log("session created: $sessionId")
-                            }.onFailure { log("error: ${it.message}") }
+                            }.onFailure { log("error: ${lanFailureHint(it as? Exception ?: RuntimeException(it.message))}") }
                         }
                     }
                 }) { Text("New session") }
