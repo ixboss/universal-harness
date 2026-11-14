@@ -120,3 +120,16 @@ documentation alone.
 | Windows → Android round trip | **NOT EXECUTED** — requires the physical device (S4 outstanding) |
 | Linux / macOS | **NOT TESTED** — no host (R-22) |
 | Real exFAT / no-symlink matrix | **NOT TESTED** — no exFAT device (R-04 stays *Mitigating*) |
+
+## Secure storage backends (2026-11-14 audit round)
+
+`core/secrets/mod.mjs` selects a backend per platform and fails explicitly
+(`SECURE_STORAGE_UNAVAILABLE`) rather than ever falling back to plaintext.
+`UH_SECRET_BACKEND` overrides the default by name.
+
+| Backend | Platform | Status |
+|---|---|---|
+| `dpapi` (PowerShell child) | Windows | **Verified** — automated DPAPI round trip incl. the apostrophe-path regression (`tests/security.test.mjs`) |
+| `keychain` (`security` CLI) | macOS | **UNVERIFIED** — no macOS host; code paths reviewed only. Items: service `com.universal-harness.secrets`, account = secret name; the value rides as the `-w` argv element (no stdin mode in the CLI) |
+| `libsecret` (`secret-tool`) | Linux | **UNVERIFIED** — no Linux host; requires `libsecret-tools` on PATH. Secret is fed on stdin, never on the command line |
+| none | other platforms | **Verified** — fails explicitly (`tests/security.test.mjs`) |

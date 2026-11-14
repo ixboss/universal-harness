@@ -160,3 +160,37 @@ test('audit 1.5: DPAPI store works with an apostrophe in the device path (no Pow
     assert.equal(await storage.get('provider-key'), null);
   } finally { await fs.promises.rm(root, { recursive: true, force: true }); }
 });
+
+test('audit 3.2: explicit unsupported backend fails closed (never plaintext)', async () => {
+  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'uh-backend-'));
+  const prev = process.env.UH_SECRET_BACKEND;
+  try {
+    process.env.UH_SECRET_BACKEND = 'definitely-not-a-backend';
+    const p = { data: path.join(root, 'data'), device: path.join(root, 'device') };
+    const storage = createSecureStorage({ root, p });
+    assert.equal(storage.describe().backend, 'definitely-not-a-backend');
+    await assert.rejects(() => storage.set('k', 'v'),
+      (e) => e.code === 'SECURE_STORAGE_UNAVAILABLE',
+      'an unknown backend must fail explicitly, never store plaintext');
+  } finally {
+    if (prev === undefined) delete process.env.UH_SECRET_BACKEND; else process.env.UH_SECRET_BACKEND = prev;
+    await fs.promises.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('audit 3.2: UH_SECRET_BACKEND env override selects the backend by name', () => {
+  const root = os.tmpdir();
+  const p = { data: root, device: root };
+  const cases = [['dpapi', 'dpapi'], ['keychain', 'keychain'], ['libsecret', 'libsecret']];
+  const prev = process.env.UH_SECRET_BACKEND;
+  try {
+    for (const [env, expected] of cases) {
+      process.env.UH_SECRET_BACKEND = env;
+      const storage = createSecureStorage({ root, p });
+      assert.equal(storage.describe().backend, expected);
+      assert.equal(storage.describe().supported, true);
+    }
+  } finally {
+    if (prev === undefined) delete process.env.UH_SECRET_BACKEND; else process.env.UH_SECRET_BACKEND = prev;
+  }
+});
