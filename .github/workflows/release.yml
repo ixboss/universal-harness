@@ -9,8 +9,25 @@ permissions:
   contents: write
 
 jobs:
+  # Audit 2.1: a tag push must never publish artifacts built from untested code.
+  tests:
+    name: Test suite (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm test
+
   desktop-bundles:
     name: Portable USB/Desktop bundles
+    needs: [tests]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     strategy:
@@ -41,6 +58,7 @@ jobs:
 
   android-apk:
     name: Release Android APK
+    needs: [tests]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
