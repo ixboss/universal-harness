@@ -313,7 +313,7 @@ const SDK_NOTIFICATIONS_FALLBACK = ['subagent.started', 'subagent.finished'];
  * and initialize() verify reachability instead, and the prompt's completion
  * settles the task (exit code 0) exactly like a child exit.
  */
-export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, allowInsecureRemote = false, label = 'openai-compatible', log = consoleShim(), timeouts = {} }) {
+export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, allowInsecureRemote = false, historyMessages = 40, label = 'openai-compatible', log = consoleShim(), timeouts = {} }) {
   log = log || consoleShim();
   const T = { ...DEFAULT_TIMEOUTS, ...timeouts };
   const { on, emit } = makeEmitter(log);
@@ -321,6 +321,14 @@ export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, allowInsecureR
   let exited = null;            // {code, signal} once the current prompt settled
   let lastError = null;
   const base = String(baseUrl || '').replace(/\/+$/, '');
+
+  // Audit 3.1: per-session conversation history. The HTTP/SSE endpoint is
+  // stateless, so without this every prompt was a context-free single turn.
+  // Capped (oldest dropped) so a long session cannot grow the request without
+  // bound; a failed turn is never recorded. sessionId is what the executor
+  // passes — a linked continuation keeps its history, a new session starts
+  // fresh.
+  const histories = new Map();  // sessionId -> [{role, content}, ...]
 
   // Audit 1.4: an API key must never be sent to a plain-HTTP non-loopback
   // endpoint. Loopback and https are fine; anything else needs the explicit
@@ -378,10 +386,13 @@ export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, allowInsecureR
     get pid() { return null; },
     timeouts: T,
 
-    async prompt({ text }) {
+    async prompt({ sessionId = null, text }) {
       exited = null;
       controller = new AbortController();
       let output = '';
+      const sessionKey = String(sessionId || 'default');
+      const history = histories.get(sessionKey) || [];
+      const messages = [...history, { role: 'user', content: String(text || '') }];
       const timer = T.prompt > 0 ? setTimeout(() => controller.abort(new UhError(ERR.DSH_TIMEOUT, `${label} prompt exceeded ${T.prompt}ms`)), T.prompt) : null;
       try {
         const res = await fetch(`${base}/chat/completions`, {
@@ -389,7 +400,7 @@ export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, allowInsecureR
           headers: headers(),
           signal: controller.signal,
           redirect: 'error',
-          body: JSON.stringify({ model, stream: true, messages: [{ role: 'user', content: String(text || '') }] }),
+          body: JSON.stringify({ model, stream: true, messages }),
         });
         if (!res.ok || !res.body) {
           const detail = await res.text().catch(() => '');
@@ -442,6 +453,12 @@ export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, allowInsecureR
         controller = null;
       }
       exited = { code: 0, signal: null };
+      // Audit 3.1: record the completed turn (user + assistant) in the
+      // session's history, bounded to historyMessages messages.
+      if (output.trim()) {
+        const next = [...messages, { role: 'assistant', content: output }];
+        histories.set(sessionKey, next.slice(Math.max(0, next.length - historyMessages)));
+      }
       emit('exit', exited);
       return { output };
     },

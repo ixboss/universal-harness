@@ -303,3 +303,70 @@ test('audit 1.4: a trailing SSE line with no final newline is flushed, not dropp
     server.close();
   }
 });
+
+test('audit 3.1: HTTP adapter keeps bounded per-session conversation history', async () => {
+  const bodies = [];
+  const server = http.createServer((req, res) => {
+    if (/\/chat\/completions$/.test(req.url)) {
+      let raw = '';
+      req.on('data', (c) => { raw += c; });
+      req.on('end', () => {
+        bodies.push(JSON.parse(raw).messages);
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: `reply-${bodies.length}` } }] })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+      });
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"data":[]}');
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const { port } = server.address();
+  try {
+    const adapter = createNamedAdapter('openai-compatible', {
+      baseUrl: `http://127.0.0.1:${port}/v1`, model: 'm', historyMessages: 4, log: null,
+    });
+    await adapter.launch();
+
+    // Turn 1 — single user message.
+    await adapter.prompt({ sessionId: 'sess_a', text: 'q1' });
+    assert.deepEqual(bodies[0], [{ role: 'user', content: 'q1' }]);
+
+    // Turn 2 — same session: the prior turn is in context.
+    await adapter.prompt({ sessionId: 'sess_a', text: 'q2' });
+    assert.deepEqual(bodies[1], [
+      { role: 'user', content: 'q1' },
+      { role: 'assistant', content: 'reply-1' },
+      { role: 'user', content: 'q2' },
+    ]);
+
+    // A different session starts fresh (no cross-session bleed).
+    await adapter.prompt({ sessionId: 'sess_b', text: 'q3' });
+    assert.deepEqual(bodies[2], [{ role: 'user', content: 'q3' }]);
+
+    // The cap holds: 4-message budget means the stored history is bounded,
+    // so a request is at most historyMessages + the new user turn.
+    await adapter.prompt({ sessionId: 'sess_a', text: 'q4' });
+    assert.deepEqual(bodies[3], [
+      { role: 'user', content: 'q1' },
+      { role: 'assistant', content: 'reply-1' },
+      { role: 'user', content: 'q2' },
+      { role: 'assistant', content: 'reply-2' },
+      { role: 'user', content: 'q4' },
+    ]);
+    // Turn 5 proves the STORED history was trimmed: only the newest four
+    // messages (q2/r2/q4/r4) survived the cap, q1/r1 dropped.
+    await adapter.prompt({ sessionId: 'sess_a', text: 'q5' });
+    assert.deepEqual(bodies[4], [
+      { role: 'user', content: 'q2' },
+      { role: 'assistant', content: 'reply-2' },
+      { role: 'user', content: 'q4' },
+      { role: 'assistant', content: 'reply-4' },
+      { role: 'user', content: 'q5' },
+    ]);
+  } finally {
+    server.close();
+  }
+});
