@@ -1,0 +1,757 @@
+# uh connect live E2E against desktop node https://127.0.0.1:7443 (nodeKind=desktop)
+# started 2026-10-11T15:43:08Z
+
+$ uh connect pair --payload-file diagnostics/gate-f/payload-3.json --profile cli
+(node:12660) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+nodeId: node_cb8e8fbbea8fe74643ec9ae5a0658317
+endpoint: https://127.0.0.1:7443
+deviceId: device_daa66376dea3f3b87510e1375b57078e
+grantedScopes: read-only, project-session-control, task-control, file-modify
+rePaired: false
+profile: cli
+exit=0
+
+$ uh connect nodes --profile cli
+profile: cli
+nodes:
+    nodeId: node_cb8e8fbbea8fe74643ec9ae5a0658317
+    endpoint: https://127.0.0.1:7443
+    name: DESKTOP-IP65QF0
+    deviceId: device_daa66376dea3f3b87510e1375b57078e
+    grantedScopes: read-only, project-session-control, task-control, file-modify
+    pairedAt: 2026-10-11T15:43:12.209Z
+exit=0
+
+$ uh connect status --profile cli --json
+(node:4700) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+{
+  "nodeId": "node_cb8e8fbbea8fe74643ec9ae5a0658317",
+  "platform": "windows",
+  "nodeKind": "desktop",
+  "protocolVersionRange": [
+    1,
+    1
+  ],
+  "operations": [
+    "auth.connect",
+    "device.pair",
+    "device.list",
+    "device.revoke",
+    "session.list",
+    "session.create",
+    "session.read",
+    "session.resume",
+    "session.replay",
+    "project.list",
+    "project.create",
+    "project.open",
+    "task.start",
+    "task.list",
+    "task.cancel",
+    "task.history",
+    "file.browse",
+    "file.read",
+    "file.write",
+    "diagnostics.run"
+  ],
+  "pairingOpen": false,
+  "deviceId": "device_daa66376dea3f3b87510e1375b57078e",
+  "grantedScopes": [
+    "read-only",
+    "project-session-control",
+    "task-control",
+    "file-modify"
+  ],
+  "endpoint": "https://127.0.0.1:7443"
+}
+exit=0
+resolved projectId=proj_2005038a5f334ec5f5d30f754854b5d6
+created sessionId=sess_4f5ac5f00fb9728f2fdfd182330002ea
+
+$ uh connect sessions list --profile cli --json
+(node:6720) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+{
+  "sessions": [
+    {
+      "sessionId": "sess_c4b44a62e39ec5e4c909cd83c9aa03b9",
+      "projectId": "proj_2005038a5f334ec5f5d30f754854b5d6",
+      "label": "gate-f session",
+      "status": "open",
+      "createdAt": "2026-10-01T20:56:22.733Z",
+      "updatedAt": "2026-10-01T20:58:50.747Z",
+      "dshAvailable": true
+    },
+    {
+      "sessionId": "sess_f61253111210ab22e277a9f9dd0b1ebb",
+      "projectId": "proj_2005038a5f334ec5f5d30f754854b5d6",
+      "label": "gate-f continuation",
+      "status": "open",
+      "priorSessionId": "sess_c4b44a62e39ec5e4c909cd83c9aa03b9",
+      "createdAt": "2026-10-01T20:57:52.847Z",
+      "updatedAt": "2026-10-01T20:57:52.910Z",
+      "dshAvailable": true
+    },
+    {
+      "sessionId": "sess_633026408b1822e8ba44203cd9db47d4",
+      "projectId": "proj_e4d5b2bba22704f57537b21989a38f4e",
+      "label": "gate-f session",
+      "status": "open",
+      "createdAt": "2026-10-02T14:42:17.415Z",
+      "updatedAt": "2026-10-02T14:45:38.391Z",
+      "dshAvailable": true
+    },
+    {
+      "sessionId": "sess_4afa1cc603bcfbeea6dc55308d89da4f",
+      "projectId": "proj_e4d5b2bba22704f57537b21989a38f4e",
+      "label": "gate-f continuation",
+      "status": "open",
+      "priorSessionId": "sess_633026408b1822e8ba44203cd9db47d4",
+      "createdAt": "2026-10-02T14:43:47.556Z",
+      "updatedAt": "2026-10-02T14:43:47.616Z",
+      "dshAvailable": true
+    },
+    {
+      "sessionId": "sess_779d0ec371f120c7ad05ec817062eaf5",
+      "projectId": "proj_e4d5b2bba22704f57537b21989a38f4e",
+      "label": "cli-session",
+      "status": "open",
+      "createdAt": "2026-10-02T14:49:34.266Z",
+      "updatedAt": "2026-10-02T14:49:57.384Z",
+      "dshAvailable": true
+    },
+    {
+      "sessionId": "sess_5e0f4a06f5be75a8f1578d2bed189d39",
+      "projectId": "proj_e4d5b2bba22704f57537b21989a38f4e",
+      "label": "cli-continuation",
+      "status": "open",
+      "priorSessionId": "sess_779d0ec371f120c7ad05ec817062eaf5",
+      "createdAt": "2026-10-02T14:51:53.649Z",
+      "updatedAt": "2026-10-02T14:51:53.649Z",
+      "dshAvailable": false
+    },
+    {
+      "sessionId": "sess_3422fe66f42feeba89132dd5bb573e28",
+      "projectId": "proj_83de0d54c085c4f28a9638c9479e1463",
+      "label": "gate-f session",
+      "status": "open",
+      "createdAt": "2026-10-11T15:40:50.025Z",
+      "updatedAt": "2026-10-11T15:42:46.796Z",
+      "dshAvailable": false
+    },
+    {
+      "sessionId": "sess_5e0353f27862768a24f66f048f094ad9",
+      "projectId": "proj_83de0d54c085c4f28a9638c9479e1463",
+      "label": "gate-f continuation",
+      "status": "open",
+      "priorSessionId": "sess_3422fe66f42feeba89132dd5bb573e28",
+      "createdAt": "2026-10-11T15:41:28.501Z",
+      "updatedAt": "2026-10-11T15:41:28.698Z",
+      "dshAvailable": false
+    },
+    {
+      "sessionId": "sess_4f5ac5f00fb9728f2fdfd182330002ea",
+      "projectId": "proj_2005038a5f334ec5f5d30f754854b5d6",
+      "label": "cli-session",
+      "status": "open",
+      "createdAt": "2026-10-11T15:43:18.583Z",
+      "updatedAt": "2026-10-11T15:43:18.583Z",
+      "dshAvailable": false
+    }
+  ]
+}
+exit=0
+
+$ uh connect sessions read --session sess_4f5ac5f00fb9728f2fdfd182330002ea --profile cli
+(node:10260) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+kind: session.read
+session:
+  sessionId: sess_4f5ac5f00fb9728f2fdfd182330002ea
+  projectId: proj_2005038a5f334ec5f5d30f754854b5d6
+  label: cli-session
+  status: open
+  createdAt: 2026-10-11T15:43:18.583Z
+  updatedAt: 2026-10-11T15:43:18.583Z
+  dshAvailable: false
+dsh:
+  available: false
+exit=0
+resumed continuation sessionId=sess_347ef84f124b1b1c744b7a3d85286bcc
+
+$ uh connect sessions read --session sess_347ef84f124b1b1c744b7a3d85286bcc --profile cli
+(node:14376) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+kind: session.read
+session:
+  sessionId: sess_347ef84f124b1b1c744b7a3d85286bcc
+  projectId: proj_2005038a5f334ec5f5d30f754854b5d6
+  label: cli-continuation
+  status: open
+  priorSessionId: sess_4f5ac5f00fb9728f2fdfd182330002ea
+  createdAt: 2026-10-11T15:43:24.255Z
+  updatedAt: 2026-10-11T15:43:24.255Z
+  dshAvailable: false
+dsh:
+  available: false
+exit=0
+
+$ uh connect tasks start --session sess_4f5ac5f00fb9728f2fdfd182330002ea --project proj_2005038a5f334ec5f5d30f754854b5d6 --prompt CLI verification task --client-request-id cli-req-0001 --profile cli --json
+(node:12804) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+{
+  "kind": "task.start",
+  "taskId": "task_c58d8d2012de13d0af7fb54bd66201f0",
+  "sessionId": "sess_4f5ac5f00fb9728f2fdfd182330002ea",
+  "state": "queued"
+}
+exit=0
+
+$ uh connect tasks start --session sess_4f5ac5f00fb9728f2fdfd182330002ea --project proj_2005038a5f334ec5f5d30f754854b5d6 --prompt CLI verification task --client-request-id cli-req-0001 --profile cli --json
+(node:10072) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+{
+  "kind": "task.start",
+  "taskId": "task_c58d8d2012de13d0af7fb54bd66201f0",
+  "sessionId": "sess_4f5ac5f00fb9728f2fdfd182330002ea",
+  "state": "failed",
+  "idempotentReplay": true
+}
+exit=0
+
+$ uh connect tasks start --session sess_4f5ac5f00fb9728f2fdfd182330002ea --project proj_2005038a5f334ec5f5d30f754854b5d6 --prompt a DIFFERENT prompt --client-request-id cli-req-0001 --profile cli --json
+(node:20776) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+{
+  "error": "NODE_ERROR",
+  "message": "task.start failed",
+  "protocolCode": "CONFLICT",
+  "detail": "clientRequestId \"cli-req-0001\" was already used by this device with a different request"
+}
+exit=1
+
+$ uh connect tasks history --task task_does_not_exist_0000 --profile cli --json
+(node:13504) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+{
+  "error": "NODE_ERROR",
+  "message": "task.history failed",
+  "protocolCode": "INVALID_MESSAGE",
+  "detail": "envelope rejected by schema: taskId: does not match pattern ^task_[0-9a-f]{32}$"
+}
+exit=1
+
+$ uh connect sessions read --session sess_does_not_exist_0000 --profile cli --json
+(node:8888) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+{
+  "error": "NODE_ERROR",
+  "message": "session.read failed",
+  "protocolCode": "INVALID_MESSAGE",
+  "detail": "envelope rejected by schema: sessionId: does not match pattern ^sess_[0-9a-f]{32}$"
+}
+exit=1
+
+$ uh connect events --cursor 0 --profile cli --json
+(node:13764) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+{
+  "events": [
+    {
+      "eventId": 1,
+      "kind": "session.created",
+      "sessionId": "sess_c4b44a62e39ec5e4c909cd83c9aa03b9",
+      "state": "open",
+      "timestamp": "2026-10-01T20:56:22.735Z"
+    },
+    {
+      "eventId": 2,
+      "kind": "task.queued",
+      "taskId": "task_427a0253e0f8700856bfd67d77327ccb",
+      "sessionId": "sess_c4b44a62e39ec5e4c909cd83c9aa03b9",
+      "state": "queued",
+      "timestamp": "2026-10-01T20:56:22.810Z"
+    },
+    {
+      "eventId": 3,
+      "kind": "task.started",
+      "taskId": "task_427a0253e0f8700856bfd67d77327ccb",
+      "sessionId": "sess_c4b44a62e39ec5e4c909cd83c9aa03b9",
+      "state": "starting",
+      "timestamp": "2026-10-01T20:56:22.822Z"
+    },
+    {
+      "eventId": 4,
+      "kind": "task.started",
+      "taskId": "task_427a0253e0f8700856bfd67d77327ccb",
+      "sessionId": "sess_c4b44a62e39ec5e4c909cd83c9aa03b9",
+      "state": "running",
+      "timestamp": "2026-10-01T20:56:22.823Z"
+    },
+    {
+      "eventId": 5,
+      "kind": "session.created",
+      "sessionId": "sess_f61253111210ab22e277a9f9dd0b1ebb",
+      "state": "open",
+      "timestamp": "2026-10-01T20:57:52.848Z"
+    },
+    {
+      "eventId": 6,
+      "kind": "task.queued",
+      "taskId": "task_d0f3f5a42d488e0d90de687f787a1594",
+      "sessionId": "sess_f61253111210ab22e277a9f9dd0b1ebb",
+      "state": "queued",
+      "timestamp": "2026-10-01T20:57:52.911Z"
+    },
+    {
+      "eventId": 7,
+      "kind": "task.started",
+      "taskId": "task_d0f3f5a42d488e0d90de687f787a1594",
+      "sessionId": "sess_f61253111210ab22e277a9f9dd0b1ebb",
+      "state": "starting",
+      "timestamp": "2026-10-01T20:57:52.919Z"
+    },
+    {
+      "eventId": 8,
+      "kind": "task.started",
+      "taskId": "task_d0f3f5a42d488e0d90de687f787a1594",
+      "sessionId": "sess_f61253111210ab22e277a9f9dd0b1ebb",
+      "state": "running",
+      "timestamp": "2026-10-01T20:57:52.922Z"
+    },
+    {
+      "eventId": 9,
+      "kind": "task.queued",
+      "taskId": "task_0a04d41a8effb5606081174b2c1a3822",
+      "sessionId": "sess_c4b44a62e39ec5e4c909cd83c9aa03b9",
+      "state": "queued",
+      "timestamp": "2026-10-01T20:58:50.748Z"
+    },
+    {
+      "eventId": 10,
+      "kind": "task.started",
+      "taskId": "task_0a04d41a8effb5606081174b2c1a3822",
+      "sessionId": "sess_c4b44a62e39ec5e4c909cd83c9aa03b9",
+      "state": "starting",
+      "timestamp": "2026-10-01T20:58:50.753Z"
+    },
+    {
+      "eventId": 11,
+      "kind": "task.started",
+      "taskId": "task_0a04d41a8effb5606081174b2c1a3822",
+      "sessionId": "sess_c4b44a62e39ec5e4c909cd83c9aa03b9",
+      "state": "running",
+      "timestamp": "2026-10-01T20:58:50.754Z"
+    },
+    {
+      "eventId": 12,
+      "kind": "task.failed",
+      "taskId": "task_0a04d41a8effb5606081174b2c1a3822",
+      "sessionId": "sess_c4b44a62e39ec5e4c909cd83c9aa03b9",
+      "state": "failed",
+      "timestamp": "2026-10-01T20:58:52.630Z"
+    },
+    {
+      "eventId": 13,
+      "kind": "task.failed",
+      "taskId": "task_427a0253e0f8700856bfd67d77327ccb",
+      "sessionId": "sess_c4b44a62e39ec5e4c909cd83c9aa03b9",
+      "state": "failed",
+      "timestamp": "2026-10-02T14:37:24.607Z"
+    },
+    {
+      "eventId": 14,
+      "kind": "task.failed",
+      "taskId": "task_d0f3f5a42d488e0d90de687f787a1594",
+      "sessionId": "sess_f61253111210ab22e277a9f9dd0b1ebb",
+      "state": "failed",
+      "timestamp": "2026-10-02T14:37:24.608Z"
+    },
+    {
+      "eventId": 15,
+      "kind": "session.created",
+      "sessionId": "sess_633026408b1822e8ba44203cd9db47d4",
+      "state": "open",
+      "timestamp": "2026-10-02T14:42:17.416Z"
+    },
+    {
+      "eventId": 16,
+      "kind": "task.queued",
+      "taskId": "task_705aaa9b6df7e7b336d8d981a044c97a",
+      "sessionId": "sess_633026408b1822e8ba44203cd9db47d4",
+      "state": "queued",
+      "timestamp": "2026-10-02T14:42:17.509Z"
+    },
+    {
+      "eventId": 17,
+      "kind": "task.started",
+      "taskId": "task_705aaa9b6df7e7b336d8d981a044c97a",
+      "sessionId": "sess_633026408b1822e8ba44203cd9db47d4",
+      "state": "starting",
+      "timestamp": "2026-10-02T14:42:17.526Z"
+    },
+    {
+      "eventId": 18,
+      "kind": "task.started",
+      "taskId": "task_705aaa9b6df7e7b336d8d981a044c97a",
+      "sessionId": "sess_633026408b1822e8ba44203cd9db47d4",
+      "state": "running",
+      "timestamp": "2026-10-02T14:42:17.527Z"
+    },
+    {
+      "eventId": 19,
+      "kind": "session.created",
+      "sessionId": "sess_4afa1cc603bcfbeea6dc55308d89da4f",
+      "state": "open",
+      "timestamp": "2026-10-02T14:43:47.557Z"
+    },
+    {
+      "eventId": 20,
+      "kind": "task.queued",
+      "taskId": "task_0c7a201daa96d290d0fadd24fe059495",
+      "sessionId": "sess_4afa1cc603bcfbeea6dc55308d89da4f",
+      "state": "queued",
+      "timestamp": "2026-10-02T14:43:47.617Z"
+    },
+    {
+      "eventId": 21,
+      "kind": "task.started",
+      "taskId": "task_0c7a201daa96d290d0fadd24fe059495",
+      "sessionId": "sess_4afa1cc603bcfbeea6dc55308d89da4f",
+      "state": "starting",
+      "timestamp": "2026-10-02T14:43:47.624Z"
+    },
+    {
+      "eventId": 22,
+      "kind": "task.started",
+      "taskId": "task_0c7a201daa96d290d0fadd24fe059495",
+      "sessionId": "sess_4afa1cc603bcfbeea6dc55308d89da4f",
+      "state": "running",
+      "timestamp": "2026-10-02T14:43:47.625Z"
+    },
+    {
+      "eventId": 23,
+      "kind": "task.queued",
+      "taskId": "task_ebda6e168d0db2293ad5bf86a1f743f9",
+      "sessionId": "sess_633026408b1822e8ba44203cd9db47d4",
+      "state": "queued",
+      "timestamp": "2026-10-02T14:45:38.392Z"
+    },
+    {
+      "eventId": 24,
+      "kind": "task.started",
+      "taskId": "task_ebda6e168d0db2293ad5bf86a1f743f9",
+      "sessionId": "sess_633026408b1822e8ba44203cd9db47d4",
+      "state": "starting",
+      "timestamp": "2026-10-02T14:45:38.396Z"
+    },
+    {
+      "eventId": 25,
+      "kind": "task.started",
+      "taskId": "task_ebda6e168d0db2293ad5bf86a1f743f9",
+      "sessionId": "sess_633026408b1822e8ba44203cd9db47d4",
+      "state": "running",
+      "timestamp": "2026-10-02T14:45:38.397Z"
+    },
+    {
+      "eventId": 26,
+      "kind": "task.failed",
+      "taskId": "task_ebda6e168d0db2293ad5bf86a1f743f9",
+      "sessionId": "sess_633026408b1822e8ba44203cd9db47d4",
+      "state": "failed",
+      "timestamp": "2026-10-02T14:45:40.201Z"
+    },
+    {
+      "eventId": 27,
+      "kind": "session.created",
+      "sessionId": "sess_779d0ec371f120c7ad05ec817062eaf5",
+      "state": "open",
+      "timestamp": "2026-10-02T14:49:34.268Z"
+    },
+    {
+      "eventId": 28,
+      "kind": "task.queued",
+      "taskId": "task_701f461c92869c8b44f4fd33a0115c5e",
+      "sessionId": "sess_779d0ec371f120c7ad05ec817062eaf5",
+      "state": "queued",
+      "timestamp": "2026-10-02T14:49:57.386Z"
+    },
+    {
+      "eventId": 29,
+      "kind": "task.started",
+      "taskId": "task_701f461c92869c8b44f4fd33a0115c5e",
+      "sessionId": "sess_779d0ec371f120c7ad05ec817062eaf5",
+      "state": "starting",
+      "timestamp": "2026-10-02T14:49:57.390Z"
+    },
+    {
+      "eventId": 30,
+      "kind": "task.started",
+      "taskId": "task_701f461c92869c8b44f4fd33a0115c5e",
+      "sessionId": "sess_779d0ec371f120c7ad05ec817062eaf5",
+      "state": "running",
+      "timestamp": "2026-10-02T14:49:57.391Z"
+    },
+    {
+      "eventId": 31,
+      "kind": "session.created",
+      "sessionId": "sess_5e0f4a06f5be75a8f1578d2bed189d39",
+      "state": "open",
+      "timestamp": "2026-10-02T14:51:53.650Z"
+    },
+    {
+      "eventId": 32,
+      "kind": "task.failed",
+      "taskId": "task_705aaa9b6df7e7b336d8d981a044c97a",
+      "sessionId": "sess_633026408b1822e8ba44203cd9db47d4",
+      "state": "failed",
+      "timestamp": "2026-10-11T15:40:33.884Z"
+    },
+    {
+      "eventId": 33,
+      "kind": "task.failed",
+      "taskId": "task_0c7a201daa96d290d0fadd24fe059495",
+      "sessionId": "sess_4afa1cc603bcfbeea6dc55308d89da4f",
+      "state": "failed",
+      "timestamp": "2026-10-11T15:40:33.909Z"
+    },
+    {
+      "eventId": 34,
+      "kind": "task.failed",
+      "taskId": "task_701f461c92869c8b44f4fd33a0115c5e",
+      "sessionId": "sess_779d0ec371f120c7ad05ec817062eaf5",
+      "state": "failed",
+      "timestamp": "2026-10-11T15:40:33.929Z"
+    },
+    {
+      "eventId": 35,
+      "kind": "session.created",
+      "sessionId": "sess_3422fe66f42feeba89132dd5bb573e28",
+      "state": "open",
+      "timestamp": "2026-10-11T15:40:50.089Z"
+    },
+    {
+      "eventId": 36,
+      "kind": "task.queued",
+      "taskId": "task_f2f291f6adf2a2da69df61fe1340d7e2",
+      "sessionId": "sess_3422fe66f42feeba89132dd5bb573e28",
+      "state": "queued",
+      "timestamp": "2026-10-11T15:40:50.346Z"
+    },
+    {
+      "eventId": 37,
+      "kind": "task.started",
+      "taskId": "task_f2f291f6adf2a2da69df61fe1340d7e2",
+      "sessionId": "sess_3422fe66f42feeba89132dd5bb573e28",
+      "state": "starting",
+      "timestamp": "2026-10-11T15:40:50.761Z"
+    },
+    {
+      "eventId": 38,
+      "kind": "task.started",
+      "taskId": "task_f2f291f6adf2a2da69df61fe1340d7e2",
+      "sessionId": "sess_3422fe66f42feeba89132dd5bb573e28",
+      "state": "running",
+      "timestamp": "2026-10-11T15:40:50.763Z"
+    },
+    {
+      "eventId": 39,
+      "kind": "task.failed",
+      "taskId": "task_f2f291f6adf2a2da69df61fe1340d7e2",
+      "sessionId": "sess_3422fe66f42feeba89132dd5bb573e28",
+      "state": "failed",
+      "timestamp": "2026-10-11T15:41:28.441Z"
+    },
+    {
+      "eventId": 40,
+      "kind": "session.created",
+      "sessionId": "sess_5e0353f27862768a24f66f048f094ad9",
+      "state": "open",
+      "timestamp": "2026-10-11T15:41:28.524Z"
+    },
+    {
+      "eventId": 41,
+      "kind": "task.queued",
+      "taskId": "task_93b4319e2af7e69cc27a20665a34b763",
+      "sessionId": "sess_5e0353f27862768a24f66f048f094ad9",
+      "state": "queued",
+      "timestamp": "2026-10-11T15:41:28.721Z"
+    },
+    {
+      "eventId": 42,
+      "kind": "task.started",
+      "taskId": "task_93b4319e2af7e69cc27a20665a34b763",
+      "sessionId": "sess_5e0353f27862768a24f66f048f094ad9",
+      "state": "starting",
+      "timestamp": "2026-10-11T15:41:28.729Z"
+    },
+    {
+      "eventId": 43,
+      "kind": "task.started",
+      "taskId": "task_93b4319e2af7e69cc27a20665a34b763",
+      "sessionId": "sess_5e0353f27862768a24f66f048f094ad9",
+      "state": "running",
+      "timestamp": "2026-10-11T15:41:28.731Z"
+    },
+    {
+      "eventId": 44,
+      "kind": "task.failed",
+      "taskId": "task_93b4319e2af7e69cc27a20665a34b763",
+      "sessionId": "sess_5e0353f27862768a24f66f048f094ad9",
+      "state": "failed",
+      "timestamp": "2026-10-11T15:41:29.297Z"
+    },
+    {
+      "eventId": 45,
+      "kind": "task.queued",
+      "taskId": "task_3ca0f2986614bc6c8e6b485d9d74053d",
+      "sessionId": "sess_3422fe66f42feeba89132dd5bb573e28",
+      "state": "queued",
+      "timestamp": "2026-10-11T15:42:46.819Z"
+    },
+    {
+      "eventId": 46,
+      "kind": "task.started",
+      "taskId": "task_3ca0f2986614bc6c8e6b485d9d74053d",
+      "sessionId": "sess_3422fe66f42feeba89132dd5bb573e28",
+      "state": "starting",
+      "timestamp": "2026-10-11T15:42:46.825Z"
+    },
+    {
+      "eventId": 47,
+      "kind": "task.started",
+      "taskId": "task_3ca0f2986614bc6c8e6b485d9d74053d",
+      "sessionId": "sess_3422fe66f42feeba89132dd5bb573e28",
+      "state": "running",
+      "timestamp": "2026-10-11T15:42:46.826Z"
+    },
+    {
+      "eventId": 48,
+      "kind": "task.failed",
+      "taskId": "task_3ca0f2986614bc6c8e6b485d9d74053d",
+      "sessionId": "sess_3422fe66f42feeba89132dd5bb573e28",
+      "state": "failed",
+      "timestamp": "2026-10-11T15:42:47.374Z"
+    },
+    {
+      "eventId": 49,
+      "kind": "session.created",
+      "sessionId": "sess_4f5ac5f00fb9728f2fdfd182330002ea",
+      "state": "open",
+      "timestamp": "2026-10-11T15:43:18.607Z"
+    },
+    {
+      "eventId": 50,
+      "kind": "session.created",
+      "sessionId": "sess_347ef84f124b1b1c744b7a3d85286bcc",
+      "state": "open",
+      "timestamp": "2026-10-11T15:43:24.278Z"
+    },
+    {
+      "eventId": 51,
+      "kind": "task.queued",
+      "taskId": "task_c58d8d2012de13d0af7fb54bd66201f0",
+      "sessionId": "sess_4f5ac5f00fb9728f2fdfd182330002ea",
+      "state": "queued",
+      "timestamp": "2026-10-11T15:43:28.437Z"
+    },
+    {
+      "eventId": 52,
+      "kind": "task.started",
+      "taskId": "task_c58d8d2012de13d0af7fb54bd66201f0",
+      "sessionId": "sess_4f5ac5f00fb9728f2fdfd182330002ea",
+      "state": "starting",
+      "timestamp": "2026-10-11T15:43:28.446Z"
+    },
+    {
+      "eventId": 53,
+      "kind": "task.started",
+      "taskId": "task_c58d8d2012de13d0af7fb54bd66201f0",
+      "sessionId": "sess_4f5ac5f00fb9728f2fdfd182330002ea",
+      "state": "running",
+      "timestamp": "2026-10-11T15:43:28.447Z"
+    },
+    {
+      "eventId": 54,
+      "kind": "task.failed",
+      "taskId": "task_c58d8d2012de13d0af7fb54bd66201f0",
+      "sessionId": "sess_4f5ac5f00fb9728f2fdfd182330002ea",
+      "state": "failed",
+      "timestamp": "2026-10-11T15:43:28.952Z"
+    }
+  ],
+  "nextCursor": 54,
+  "truncated": false,
+  "unavailable": false,
+  "snapshot": null
+}
+exit=0
+# completed 2026-10-11T15:43:51Z
+
+$ uh connect tasks history --task task_00000000000000000000000000000000 --profile cli --json
+(node:18744) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+{
+  "error": "NODE_ERROR",
+  "message": "task.history failed",
+  "protocolCode": "TASK_NOT_FOUND",
+  "detail": "no such task: task_00000000000000000000000000000000"
+}
+exit=1
+
+$ uh connect sessions read --session sess_00000000000000000000000000000000 --profile cli --json
+(node:18292) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+{
+  "error": "NODE_ERROR",
+  "message": "session.read failed",
+  "protocolCode": "NOT_FOUND",
+  "detail": "no such session: sess_00000000000000000000000000000000"
+}
+exit=1
+
+$ uh connect sessions resume --session sess_00000000000000000000000000000000 --label cli-bad --profile cli --json
+(node:12244) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+{
+  "error": "NODE_ERROR",
+  "message": "session.resume failed",
+  "protocolCode": "NOT_FOUND",
+  "detail": "no such session: sess_00000000000000000000000000000000"
+}
+exit=1
+
+$ uh connect pair --payload-file <already-consumed payload-3.json> --profile cli2
+{
+  "error": "NODE_PROTOCOL",
+  "message": "invalid pairing payload: token already expired — mint a new one on the node"
+}
+exit=1
+
+# negative path: single-use pairing token (node-side)
+$ uh connect pair --payload-file payload-4.json --profile reuse-a   # first use consumes the token
+{
+  "nodeId": "node_cb8e8fbbea8fe74643ec9ae5a0658317",
+  "endpoint": "https://127.0.0.1:7445",
+  "deviceId": "device_958ce809b1a20ebb47dfdb9d5c38277c",
+  "grantedScopes": [
+    "read-only",
+    "project-session-control",
+    "task-control",
+    "file-modify"
+  ],
+  "rePaired": false,
+  "profile": "reuse-a"
+}
+exit=0
+
+$ uh connect pair --payload-file payload-4.json --profile reuse-b   # SAME token, must be refused
+{
+  "error": "NODE_ERROR",
+  "message": "pairing failed",
+  "protocolCode": "PAIRING_EXPIRED",
+  "detail": "The pairing token has expired. Generate a new one on the node."
+}
+exit=1
