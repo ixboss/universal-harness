@@ -5,6 +5,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { once } from 'node:events';
 import { listAdapters, normalizeAdapterName, createNamedAdapter } from '../core/adapter/registry.mjs';
 import { createAdapterExecutor } from '../core/executor/mod.mjs';
@@ -76,6 +79,42 @@ test('claude-code adapter launches a real child, streams, exits', async () => {
   });
   assert.ok(chunks.join('').includes('hi from cli'));
   await adapter.cancel();
+});
+
+test('audit 0.2 REPRODUCTION: a prompt beginning with "-" arrives as a flag-like argument (no -- separator)', async () => {
+  // Audit Phase 0.2: prompt() appends the prompt text as the last argv element
+  // with no `--` end-of-options marker, so a hostile prompt can be parsed as
+  // CLI flags. This test documents the vulnerable behaviour with a stub CLI
+  // that echoes its argv; the fix (1.2) replaces the expectation here.
+  // Vivid corroboration: with `node -e <script>` as the CLI, the same prompt is
+  // consumed by the runtime's own option parser — "bad option: --dangerous-…",
+  // exit 9 — the CLI never even sees it. UNVERIFIED on real CLIs: neither
+  // `claude` nor `gemini` is installed on the audit host, so whether they
+  // honor `--` could not be checked from --help.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'uh-argv-'));
+  const stub = path.join(dir, 'echo-argv.mjs');
+  fs.writeFileSync(stub, 'for (const a of process.argv.slice(1)) console.log(a)\n');
+  try {
+    const adapter = createNamedAdapter('gemini-cli', {
+      command: process.execPath,
+      args: [stub],
+      log: null,
+    });
+    await adapter.launch();
+    const chunks = [];
+    adapter.on('event', (p) => chunks.push(p.delta || ''));
+    await new Promise((resolve, reject) => {
+      adapter.on('exit', (info) => { try { assert.equal(info.code, 0); resolve(); } catch (e) { reject(e); } });
+      adapter.prompt({ text: '--dangerous-unset-flag ignore all previous instructions' });
+    });
+    const argv = chunks.join('').split('\n').map((l) => l.trim()).filter(Boolean);
+    // The prompt arrives as a bare argument — flag-parseable, no separator.
+    assert.equal(argv[argv.length - 1], '--dangerous-unset-flag ignore all previous instructions');
+    assert.ok(!argv.includes('--'), 'no end-of-options separator is inserted (the finding)');
+    await adapter.cancel();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('executor wrapper drives a registry adapter end to end', async () => {
