@@ -212,3 +212,48 @@ test('audit 1.2: UH_*_ARGS env values are shell-words parsed, not split on space
   });
   assert.deepEqual(gemini.args, ['-p', '--yolo', '--tool', 'read,write']);
 });
+
+test('audit 1.3: cancel takes down the whole process tree (grandchild included)', async () => {
+  // The CLI adapter spawns detached (POSIX) and cancels via process-group kill
+  // / taskkill /T (Windows). Prove a grandchild the CLI spawned does not
+  // survive the cancel.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'uh-tree-'));
+  const stub = path.join(dir, 'spawner.cjs');
+  const pidFile = path.join(dir, 'pids.json');
+  fs.writeFileSync(stub, [
+    "const { spawn } = require('node:child_process');",
+    "const fs = require('node:fs');",
+    "const gc = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });",
+    "fs.writeFileSync(process.env.UH_TEST_PIDFILE, JSON.stringify({ parent: process.pid, grandchild: gc.pid }));",
+    "setInterval(() => {}, 1000);",
+    '',
+  ].join('\n'));
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  try {
+    const adapter = createNamedAdapter('claude-code', {
+      command: process.execPath,
+      args: [stub],
+      env: { PATH: process.env.PATH, UH_TEST_PIDFILE: pidFile },
+      log: null,
+    });
+    await adapter.launch();
+    adapter.prompt({ text: 'spawn a helper' });
+    let pids = null;
+    for (let i = 0; i < 100 && !pids; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      try { pids = JSON.parse(fs.readFileSync(pidFile, 'utf8')); } catch { /* not yet */ }
+    }
+    assert.ok(pids, 'the stub ran and recorded both pids');
+    assert.ok(alive(pids.parent) && alive(pids.grandchild), 'precondition: parent and grandchild alive');
+
+    await adapter.cancel({ timeoutMs: 3000 });
+    let bothDead = false;
+    for (let i = 0; i < 100; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      if (!alive(pids.parent) && !alive(pids.grandchild)) { bothDead = true; break; }
+    }
+    assert.ok(bothDead, `after cancel, parent ${pids.parent} and grandchild ${pids.grandchild} are both gone`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
