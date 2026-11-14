@@ -70,10 +70,23 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       # ubuntu-latest ships a preinstalled Android SDK with licenses accepted;
       # AGP resolves it via ANDROID_HOME (see ci.yml for the rationale).
+      # Audit 2.2: the keystore arrives as a base64 secret (a file path secret
+      # can never exist on the runner) and is decoded into $RUNNER_TEMP.
+      - name: Decode upload keystore
+        env:
+          UH_KEYSTORE_BASE64: ${{ secrets.UH_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/uh-upload.keystore.jks"
+          if [ -z "$UH_KEYSTORE_BASE64" ]; then
+            echo "UH_KEYSTORE_BASE64 secret is not set; refusing to build a fallback-signed release APK" >&2
+            exit 1
+          fi
+          printf '%s' "$UH_KEYSTORE_BASE64" | base64 -d > "$out"
+          echo "UH_KEYSTORE_PATH=$out" >> "$GITHUB_ENV"
       - name: Assemble signed release APK
         working-directory: android
         env:
-          UH_KEYSTORE_PATH: ${{ secrets.UH_KEYSTORE_PATH }}
           UH_KEYSTORE_PASSWORD: ${{ secrets.UH_KEYSTORE_PASSWORD }}
           UH_KEY_ALIAS: ${{ secrets.UH_KEY_ALIAS }}
           UH_KEY_PASSWORD: ${{ secrets.UH_KEY_PASSWORD }}
