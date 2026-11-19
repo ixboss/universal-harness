@@ -1,0 +1,14 @@
+{
+  "title": "universal-harness",
+  "category": "Portable AI Runtime Bridge",
+  "badge": "Open Source",
+  "subtitle": "Your AI Tools, Everywhere — USB, Desktop & Android",
+  "summary": "Your AI coding tools, everywhere: one portable runtime that runs from a USB drive or desktop with zero installs, controlled securely from your phone over the local network.",
+  "bullets": [
+    "Runs AI coding assistants like Claude Code and Gemini CLI from a USB drive — nothing installed on the host",
+    "Dual-mode Android app: remote-control your desktop session, or run the whole runtime on the phone",
+    "Every connection between devices is encrypted end to end"
+  ],
+  "tags": ["TypeScript", "Node.js", "Android / Kotlin", "Encrypted LAN", "Portable USB"],
+  "order": 3
+}
