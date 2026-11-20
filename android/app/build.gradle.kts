@@ -293,7 +293,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.apache.commons:commons-compress:1.27.1")
-    implementation("com.github.luben:zstd-jni:1.5.6-9@aar")
+    implementation("com.github.luben:zstd-jni:1.5.7-28@aar")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250107")
