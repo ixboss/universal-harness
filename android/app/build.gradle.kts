@@ -296,7 +296,7 @@ dependencies {
     implementation("com.github.luben:zstd-jni:1.5.6-9@aar")
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.json:json:20250107")
+    testImplementation("org.json:json:20260814")
     testImplementation(kotlin("test")) // com.universalharness.node unit tests
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
