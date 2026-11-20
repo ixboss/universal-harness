@@ -248,6 +248,23 @@ export function createNodeServer({
 
   async function runTask(task, connection) {
     const exec = executorFactory();
+    // queued -> starting -> running, committed BEFORE the executor is spawned.
+    // Recovery treats a task still 'queued' as requeue (re-drive) but 'starting'
+    // as process-vanished (failed): spawning first would let a crash in the
+    // commit gap re-drive a prompt whose executor was already running —
+    // double execution.
+    const starting = transition(task, 'starting', { eventKind: 'task.started', eventPayload: { state: 'starting' } });
+    if (!starting.ok) {
+      warn(`task ${task.taskId}: starting transition refused (${starting.code}: ${starting.reason}); executor not started`);
+      return;
+    }
+
+    const running = transition(task, 'running', { eventKind: 'task.started', eventPayload: { state: 'running' } });
+    if (!running.ok) {
+      warn(`task ${task.taskId}: running transition refused (${running.code}: ${running.reason}); executor not started`);
+      return;
+    }
+
     const handle = exec.start({
       taskId: task.taskId,
       sessionId: task.sessionId,
@@ -257,24 +274,6 @@ export function createNodeServer({
     });
 
     liveTasks.set(task.taskId, { task, handle });
-
-    // queued -> starting -> running. Each step is a separate durable commit so
-    // a crash between them leaves an unambiguous state.
-    const starting = transition(task, 'starting', { eventKind: 'task.started', eventPayload: { state: 'starting' } });
-    if (!starting.ok) {
-      warn(`task ${task.taskId}: starting transition refused (${starting.code}: ${starting.reason}); releasing the executor`);
-      await releaseHandle(handle);
-      liveTasks.delete(task.taskId);
-      return;
-    }
-
-    const running = transition(task, 'running', { eventKind: 'task.started', eventPayload: { state: 'running' } });
-    if (!running.ok) {
-      warn(`task ${task.taskId}: running transition refused (${running.code}: ${running.reason}); releasing the executor`);
-      await releaseHandle(handle);
-      liveTasks.delete(task.taskId);
-      return;
-    }
 
     const info = await handle.done;
     liveTasks.delete(task.taskId);
@@ -1053,7 +1052,7 @@ export function createNodeServer({
     async shutdown() {
       const ids = [...liveTasks.keys()];
       for (const taskId of ids) {
-        try { await cancelTask(taskId, { reason: 'node shutdown' }); }
+        try { await cancelTask(taskId, 'node shutdown'); }
         catch { /* the executor's exit path settles the task regardless */ }
       }
       return ids.length;

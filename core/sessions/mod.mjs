@@ -20,6 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { zstdDecompressSync } from 'node:zlib';
 import { ensureDir } from '../paths/mod.mjs';
+import { writeFileAtomicSync } from '../portable/mod.mjs';
 import { UhError, ERR } from '../errors/mod.mjs';
 
 const ZSTD_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd]); // little-endian 0xFD2FB528
@@ -269,18 +270,27 @@ export function createSessionIndex({ p }) {
 
   function load() {
     if (!fs.existsSync(indexPath)) return { schemaVersion: INDEX_SCHEMA, sessions: [] };
+    // A corrupt or unsupported index must fail loudly: treating it as empty
+    // silently forgets every session and the next save persists the empty index.
+    let raw;
     try {
-      const raw = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
-      if (raw.schemaVersion !== INDEX_SCHEMA) throw new Error('unsupported index schema');
-      return raw;
-    } catch { return { schemaVersion: INDEX_SCHEMA, sessions: [] }; }
+      raw = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+    } catch (e) {
+      throw new UhError(ERR.UH_INTERNAL, `session index is corrupt: ${e.message}`, { path: indexPath },
+        `Fix or delete ${indexPath}; deleting forgets session metadata only (the durable event log keeps task truth).`);
+    }
+    if (raw.schemaVersion !== INDEX_SCHEMA) {
+      throw new UhError(ERR.UH_INTERNAL,
+        `session index schema ${raw.schemaVersion} is not supported by this build (${INDEX_SCHEMA})`,
+        { path: indexPath },
+        'Run `uh doctor` for details.');
+    }
+    return raw;
   }
 
   function save(index) {
     index.updatedAt = Date.now();
-    const tmp = `${indexPath}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(index, null, 2));
-    fs.renameSync(tmp, indexPath);
+    writeFileAtomicSync(indexPath, JSON.stringify(index, null, 2));
   }
 
   /**

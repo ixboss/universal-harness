@@ -24,6 +24,10 @@ object KeystoreCipher {
     private const val GCM_TAG_BITS = 128
     private const val IV_BYTES = 12
 
+    // @Synchronized: a get-then-generate race between two first callers would let
+    // the second generateKey() replace the first under the same alias, destroying
+    // everything encrypted under the original key.
+    @Synchronized
     fun ensureKey(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
         (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }

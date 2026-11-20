@@ -8,8 +8,10 @@ exec the **bundled** Node — never a system Node — on `uh.mjs`.
   (`linux`/`darwin`, `arm64`/`x64`) and runs the matching bundled `node`.
 - `uh.mjs` — the CLI itself (commands implemented in `core/cli`).
 
-If the runtime is not yet installed, the shims still work as long as *some* node can bootstrap
-`uh setup` (the error message points at setup); after setup, only the bundled node is used.
+If the runtime is not yet installed, both shims exit 11 (`RUNTIME_MISSING`) and print the setup
+instruction — they do not fall back to a system node. The *desktop launchers*
+(`desktop/windows/UniversalHarness.bat` and friends) do fall back to a PATH node so they can
+bootstrap `uh setup` on a fresh tree; after setup, only the bundled node is used.
 
 ## Status
 

@@ -19,6 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { UhError, ERR, redact } from '../errors/mod.mjs';
 import { ensureDir } from '../paths/mod.mjs';
+import { writeFileAtomicSync } from '../portable/mod.mjs';
 import { createSecureStorage } from '../secrets/mod.mjs';
 
 const CONFIG_SCHEMA = 1;
@@ -82,9 +83,9 @@ export function createConfig({ root, p }) {
   function save(patch) {
     const next = merge(load(), patch);
     next.schemaVersion = CONFIG_SCHEMA;
-    const tmp = `${configPath}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(next, null, 2));
-    fs.renameSync(tmp, configPath);
+    // Canonical helper: process-qualified temp + fsync, so `uh config set`
+    // cannot collide with a concurrent process writing the same file.
+    writeFileAtomicSync(configPath, JSON.stringify(next, null, 2));
     return next;
   }
 

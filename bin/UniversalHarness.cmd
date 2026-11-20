@@ -17,7 +17,10 @@ if defined UH_ROOT set "ROOT=%UH_ROOT%" & goto :found
 set "ROOT=%SHIM_DIR%"
 :found
 
-set "NODE_EXE=%ROOT%\runtime\node\win-x64\node-v24.21.0-win-x64\node.exe"
+REM Resolve the runtime dir by glob, not a hardcoded version: the manifest is the
+REM pin source, and a manifest bump must not silently brick every launcher.
+set "NODE_EXE="
+for /d %%D in ("%ROOT%\runtime\node\win-x64\node-v*-win-x64") do set "NODE_EXE=%%D\node.exe"
 
 if not exist "%NODE_EXE%" (
   echo RUNTIME_MISSING: bundled Node runtime not found at "%NODE_EXE%".

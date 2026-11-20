@@ -24,6 +24,8 @@
 // 'deepseek').
 
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import { UhError, ERR, redact } from '../errors/mod.mjs';
 import { createAdapter as createDshAdapter } from './mod.mjs';
 
@@ -410,6 +412,59 @@ export function createCliProcessAdapter({ command, args, promptMode = 'arg', lab
   let stderrTail = [];
   let verified = false;
 
+  // Windows: npm installs CLI adapters as .cmd shims, which CreateProcess cannot
+  // launch and Node refuses to exec directly (EINVAL, CVE-2024-27980). Real
+  // executables are spawned directly; .cmd/.bat shims go through cmd.exe with
+  // verbatim CRT-quoted arguments (`call` keeps cmd's quote-strip rule from
+  // mangling a quoted shim path — round-trip probed on real Windows).
+  function quoteForCmd(arg) {
+    const s = String(arg);
+    if (s === '') return '""';
+    if (!/[ \t"]/.test(s)) return s;
+    let out = '"';
+    for (let i = 0; i < s.length;) {
+      const c = s[i];
+      if (c === '\\') {
+        let n = 0;
+        while (s[i + n] === '\\') n++;
+        const beforeQuote = s[i + n] === '"';
+        const doubles = (beforeQuote || i + n === s.length) ? n * 2 : n;
+        out += '\\'.repeat(doubles);
+        if (beforeQuote) { out += '\\"'; i += n + 1; } else { i += n; }
+      } else if (c === '"') {
+        out += '\\"';
+        i++;
+      } else {
+        out += c;
+        i++;
+      }
+    }
+    return out + '"';
+  }
+  function resolveWinCommand(cmd) {
+    const s = String(cmd);
+    if (/\.(exe|com)$/i.test(s)) return { target: s, viaCmd: false };
+    if (/\.(cmd|bat)$/i.test(s)) return { target: path.resolve(s), viaCmd: true };
+    const exts = (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';');
+    const dirs = /[\\/]/.test(s) ? [path.dirname(s)] : (process.env.PATH || '').split(';').filter(Boolean);
+    for (const dir of dirs) {
+      for (const ext of exts) {
+        const candidate = path.join(dir.trim(), path.basename(s) + ext.toLowerCase());
+        if (fs.existsSync(candidate)) {
+          return { target: candidate, viaCmd: /\.(cmd|bat)$/i.test(candidate) };
+        }
+      }
+    }
+    return { target: null, viaCmd: false }; // unresolvable: spawn reports its own ENOENT
+  }
+  function spawnAdapter(cmd, args, opts) {
+    if (process.platform !== 'win32') return spawn(cmd, args, opts);
+    const { target, viaCmd } = resolveWinCommand(cmd);
+    if (!viaCmd) return spawn(cmd, args, opts);
+    const line = `call "${target}" ${args.map(quoteForCmd).join(' ')}`;
+    return spawn('cmd.exe', ['/d', '/s', '/c', line], { ...opts, windowsVerbatimArguments: true });
+  }
+
   function emitExit(info) {
     exited = info;
     emit('exit', info);
@@ -422,7 +477,7 @@ export function createCliProcessAdapter({ command, args, promptMode = 'arg', lab
     launch: async () => {
       if (verified) return;
       await new Promise((resolve, reject) => {
-        const probe = spawn(command, ['--version'], { cwd: cwd || undefined, env: { ...process.env, ...env }, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+        const probe = spawnAdapter(command, ['--version'], { cwd: cwd || undefined, env: { ...process.env, ...env }, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
         let out = '';
         probe.stdout?.on('data', (d) => { out += d; });
         const timer = setTimeout(() => { try { probe.kill(); } catch {} reject(new UhError(ERR.DSH_START_FAILED, `${command} --version did not answer within ${T.startup}ms`, { command })); }, T.startup);
@@ -446,7 +501,7 @@ export function createCliProcessAdapter({ command, args, promptMode = 'arg', lab
       exited = null;
       stderrTail = [];
       const fullArgs = promptMode === 'arg' ? [...args, String(text || '')] : args;
-      child = spawn(command, fullArgs, {
+      child = spawnAdapter(command, fullArgs, {
         cwd: cwd || undefined,
         env: { ...process.env, ...env },
         shell: false,

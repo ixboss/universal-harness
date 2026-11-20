@@ -13,6 +13,7 @@ import {
   generateKeyPairSync, createPrivateKey, createPublicKey, createHash, sign,
 } from 'node:crypto';
 import { devicePaths } from '../paths/mod.mjs';
+import { UhError, ERR } from '../errors/mod.mjs';
 
 const KEY_VERSION = 1;
 
@@ -75,8 +76,18 @@ export async function loadOrCreateControllerKey({ p, profile = 'default', secure
       if (typeof stored === 'string' && stored.includes('PRIVATE KEY')) {
         privateKeyPem = stored;
         protection = 'os-secure-storage';
+      } else if (stored != null) {
+        // Fail closed: the store returned something, but not a usable key.
+        // Regenerating here would silently mint a new device identity and
+        // orphan the existing pairing — surface the corruption instead.
+        throw new UhError(ERR.UH_INTERNAL, `OS secure store returned a corrupt controller key for profile "${profile}"`,
+          { storeKey },
+          'Restore the controller key from a backup, or delete the stored entry to re-pair deliberately.');
       }
-    } catch { /* backend unavailable — fall through to the file */ }
+    } catch (e) {
+      if (e instanceof UhError) throw e;
+      /* backend unavailable — fall through to the file */
+    }
   }
   if (!privateKeyPem) privateKeyPem = readPrivateFile();
 

@@ -221,12 +221,9 @@ export async function buildBundleManifest({ root, includeProjects = false, produ
 export async function exportWorkspace({ root, p, outDir, includeProjects = false, force = false, log = logShim() }) {
   const release = acquireWorkspaceLock(root, p, 'export');
   try {
-    if (fs.existsSync(outDir)) {
-      if (!force) {
-        throw new UhError(ERR.BUNDLE_INVALID, `refusing to overwrite an existing path: ${outDir}`, { out: outDir },
-          'Choose a different --out path, or pass --force to replace the existing bundle.');
-      }
-      fs.rmSync(outDir, { recursive: true, force: true });
+    if (fs.existsSync(outDir) && !force) {
+      throw new UhError(ERR.BUNDLE_INVALID, `refusing to overwrite an existing path: ${outDir}`, { out: outDir },
+        'Choose a different --out path, or pass --force to replace the existing bundle.');
     }
 
     const { manifest, bytesByPath } = await buildBundleManifest({ root, includeProjects });
@@ -239,7 +236,22 @@ export async function exportWorkspace({ root, p, outDir, includeProjects = false
         ensureDir(path.dirname(dst));
         fs.writeFileSync(dst, buf);
       }
-      fs.renameSync(staging, outDir);
+      // Commit only after staging fully succeeded: --force must not destroy the
+      // old bundle while the new one can still fail to materialise. The swap is
+      // rename-only, and a failed swap puts the old bundle back.
+      if (fs.existsSync(outDir)) {
+        const old = `${outDir}.uh-old-${crypto.randomUUID()}`;
+        fs.renameSync(outDir, old);
+        try {
+          fs.renameSync(staging, outDir);
+        } catch (e) {
+          fs.renameSync(old, outDir);
+          throw e;
+        }
+        fs.rmSync(old, { recursive: true, force: true });
+      } else {
+        fs.renameSync(staging, outDir);
+      }
     } catch (err) {
       try { fs.rmSync(staging, { recursive: true, force: true }); } catch { /* best effort */ }
       throw err;
@@ -492,7 +504,7 @@ function lockPathFor(root, p) {
 }
 
 /** Take the advisory workspace lock, mapping lock failures to a workspace error. */
-function acquireWorkspaceLock(root, p, purpose) {
+export function acquireWorkspaceLock(root, p, purpose) {
   const lockPath = lockPathFor(root, p);
   ensureDir(path.dirname(lockPath));
   try {

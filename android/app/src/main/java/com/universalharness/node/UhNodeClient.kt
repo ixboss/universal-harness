@@ -282,7 +282,7 @@ class UhNodeClient private constructor(
         }
 
         fun sha256Hex(bytes: ByteArray): String =
-            MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+            MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { String.format(java.util.Locale.ROOT, "%02x", it) }
 
         /** Decode a PEM-encoded SPKI public key to its DER bytes, or null if malformed. */
         private fun spkiDer(pem: String): ByteArray? = runCatching {

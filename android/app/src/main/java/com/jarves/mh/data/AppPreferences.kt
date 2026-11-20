@@ -317,7 +317,15 @@ class AppPreferences(private val context: Context) {
                 put("updatedAtMillis", chat.updatedAtMillis)
             })
         }
-        File(projectDir, "index.json").writeText(arr.toString())
+        // Atomic write, mirroring saveMessages: a crash mid-write must not corrupt
+        // the index, which would hide every chat of this project in the UI.
+        val indexFile = File(projectDir, "index.json")
+        val tmp = File(projectDir, ".index.json.tmp")
+        tmp.writeText(arr.toString())
+        if (!tmp.renameTo(indexFile)) {
+            tmp.copyTo(indexFile, overwrite = true)
+            tmp.delete()
+        }
     }
 
     fun loadProjectChats(projectId: String): List<ProjectChat> {

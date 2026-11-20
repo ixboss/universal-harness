@@ -86,7 +86,7 @@ export function createAdapter({ rm, log = consoleShim(), timeouts = {}, dshHome,
         reject(new UhError(ERR.DSH_TIMEOUT, `${method} did not respond within ${timeoutMs}ms`, { id, method },
           'Check system load; raise the timeout, or the runtime may be hung (a hung dsh is force-killed on shutdown).'));
       }, timeoutMs);
-      pending.set(id, { resolve, reject, timer, method });
+      pending.set(id, { id, resolve, reject, timer, method });
       write({ jsonrpc: '2.0', id, method, params });
     });
   }
@@ -103,7 +103,9 @@ export function createAdapter({ rm, log = consoleShim(), timeouts = {}, dshHome,
       const p = pending.get(frame.id);
       if (!p) return;                 // response with no pending request: ignore
       clearTimeout(p.timer);
-      pending.delete(p.id);
+      // Key the map by frame.id: the stored entry carries no id field, so
+      // deleting by it would remove nothing and leak one entry per response.
+      pending.delete(frame.id);
       if (frame.error) {
         rejectWithProtocol(p, frame.error);
       } else {

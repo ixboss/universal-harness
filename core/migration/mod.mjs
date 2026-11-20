@@ -21,6 +21,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { UhError, ERR } from '../errors/mod.mjs';
 import { validateRoot, ensureDir } from '../paths/mod.mjs';
+import { writeFileAtomicSync } from '../portable/mod.mjs';
 import { createBackup } from '../backup/mod.mjs';
 
 /**
@@ -92,18 +93,24 @@ export async function applyMigration({ store, root, p, log = consoleShim(), forc
     backupRef: backup.ref,
     schemaVersion: store.loadRegistry().schemaVersion,
   };
-  fs.writeFileSync(path.join(histDir, `${record.id}.json`), JSON.stringify(record, null, 2));
+  writeFileAtomicSync(path.join(histDir, `${record.id}.json`), JSON.stringify(record, null, 2));
 
   log.info('workspace migrated', { from, to, backup: backup.ref });
   return { moved: true, from, to, backupRef: backup.ref, id: record.id };
 }
 
-/** Read the migration history (most recent first). */
+/** Read the migration history (most recent first). Unparseable records are skipped. */
 export function migrationHistory({ p }) {
   const dir = path.join(p.data, 'migration');
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir)
     .filter((f) => f.endsWith('.json'))
-    .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')))
+    .map((f) => {
+      // A record that failed to parse is legacy debris; skip it instead of
+      // failing every later history listing.
+      try { return JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); }
+      catch { return null; }
+    })
+    .filter((r) => r && typeof r === 'object')
     .sort((a, b) => (b.at || '').localeCompare(a.at || ''));
 }

@@ -271,6 +271,12 @@ function serveStream(server, socket, { log = null, name = 'tls', idleTimeoutMs =
     // The transport already ended the socket; make sure nothing lingers.
     try { socket.destroySoon(); } catch {}
   });
+  // A TCP reset or socket error never produces an input 'end', so the transport
+  // would stay open forever: the connection entry and (once authenticated) the
+  // event subscription would leak. Close is idempotent; 'end' already covers
+  // the graceful path.
+  socket.once('error', (e) => transport.close(`socket error: ${e?.message || 'unknown'}`));
+  socket.once('close', () => transport.close('socket closed'));
   touch();
   server.handleConnection(transport);
 }

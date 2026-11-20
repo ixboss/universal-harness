@@ -253,20 +253,36 @@ export function createEventStore({ p, log = null, maxEvents = 200_000 }) {
     if (records.length <= keepEvents) return { compacted: 0, kept: records.length };
 
     // Keep the newest `keepEvents` records verbatim, preserving terminal states
-    // and the monotonic id sequence.
+    // and the monotonic id sequence. The tail alone can drop a task entirely:
+    // if a task's newest record falls before the tail window, rebuild() finds
+    // no taskIndex entry for it and it vanishes from history. Anchor every
+    // task's newest record that the tail does not already carry.
     const keep = records.slice(-keepEvents);
+    const tailIds = new Set(keep.map((r) => r.id));
+    const newestByTask = new Map();
+    for (const r of records) {
+      if (!r.task || typeof r.task.taskId !== 'string') continue;
+      const cur = newestByTask.get(r.task.taskId);
+      if (!cur || r.id > cur.id) newestByTask.set(r.task.taskId, r);
+    }
+    const anchors = [];
+    for (const r of newestByTask.values()) {
+      if (!tailIds.has(r.id) && r.id < keep[0].id) anchors.push(r);
+    }
+    anchors.sort((a, b) => a.id - b.id);
+    const kept = [...anchors, ...keep];
     const tmp = `${logPath}.compact.tmp`;
     const out = fs.openSync(tmp, 'w', 0o600);
     try {
-      for (const r of keep) fs.writeSync(out, JSON.stringify(r) + '\n');
+      for (const r of kept) fs.writeSync(out, JSON.stringify(r) + '\n');
       fs.fsyncSync(out);
     } finally {
       fs.closeSync(out);
     }
     fs.renameSync(tmp, logPath);
-    log?.info?.(`compacted durable event log: ${records.length} -> ${keep.length} records`);
+    log?.info?.(`compacted durable event log: ${records.length} -> ${kept.length} records`);
     rebuild();
-    return { compacted: records.length - keep.length, kept: keep.length };
+    return { compacted: records.length - kept.length, kept: kept.length };
   }
 
   function describe() {

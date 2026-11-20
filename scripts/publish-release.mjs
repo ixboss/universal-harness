@@ -53,24 +53,33 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (!fs.existsSync(opts.out)) fail(`--out directory does not exist: ${opts.out} (run scripts/build-desktop.mjs first)`);
 
-  // Collect release artifacts from dist/ + the Android APK if built.
+  // Collect release artifacts from dist/ + the Android APK if built. Bundles
+  // are version-named, so only the current version's artifacts are taken:
+  // stale leftovers of older builds in dist/ are never uploaded or checksummed.
+  const prefix = `UniversalHarness-v${VERSION}-`;
   const files = fs.readdirSync(opts.out)
-    .filter((f) => f.endsWith('.zip') || f.endsWith('.tar.gz') || f.endsWith('.apk'))
+    .filter((f) => (f.endsWith('.zip') || f.endsWith('.tar.gz')) && f.startsWith(prefix))
     .map((f) => path.join(opts.out, f));
-  if (fs.existsSync(ANDROID_ARTIFACT)) {
-    const dest = path.join(opts.out, `UniversalHarness-v${VERSION}-android.apk`);
-    fs.copyFileSync(ANDROID_ARTIFACT, dest);
-    files.push(dest);
-  }
-  // An APK staged by CI (release.yml) keeps its gradle name — normalise it.
-  for (const f of [...files]) {
-    if (f.endsWith('.apk') && path.basename(f) !== `UniversalHarness-v${VERSION}-android.apk`) {
-      const dest = path.join(opts.out, `UniversalHarness-v${VERSION}-android.apk`);
-      fs.renameSync(f, dest);
-      files[files.indexOf(f)] = dest;
+
+  // The APK's gradle name carries no version, so it cannot be matched the same
+  // way: normalise whichever fresh APK is present (gradle output locally, the
+  // CI-staged copy here) into the versioned destination name. Versioned APKs
+  // of OTHER versions are stale and left alone.
+  const destApk = path.join(opts.out, `${prefix}android.apk`);
+  const apkCandidates = [
+    ANDROID_ARTIFACT,
+    ...fs.readdirSync(opts.out)
+      .filter((f) => f.endsWith('.apk') && !f.startsWith('UniversalHarness-v'))
+      .map((f) => path.join(opts.out, f)),
+  ];
+  const apkSource = apkCandidates.find((f) => fs.existsSync(f)) || (fs.existsSync(destApk) ? destApk : null);
+  if (apkSource) {
+    if (apkSource !== destApk) {
+      fs.rmSync(destApk, { force: true }); // Windows rename cannot replace in place
+      fs.copyFileSync(apkSource, destApk);
     }
-  }
-  if (!files.some((f) => f.endsWith('.apk'))) {
+    files.push(destApk);
+  } else {
     process.stdout.write(`note: no Android APK found (skipping)\n`);
   }
   if (!files.length) fail(`no release artifacts (.zip/.tar.gz) found in ${opts.out}`);

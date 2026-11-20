@@ -6,6 +6,7 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import java.util.Locale
 
 /** Streaming SHA-256 of a file (64 KiB chunks; never loads the file into memory). */
 object Sha256 {
@@ -19,12 +20,13 @@ object Sha256 {
                 md.update(buf, 0, n)
             }
         }
-        return md.digest().joinToString("") { "%02x".format(it) }
+        // Locale.ROOT: localized digits (ar/fa locales) would break every pin compare.
+        return md.digest().joinToString("") { String.format(Locale.ROOT, "%02x", it) }
     }
 
     fun ofBytes(bytes: ByteArray): String {
         val md = MessageDigest.getInstance("SHA-256")
-        return md.digest(bytes).joinToString("") { "%02x".format(it) }
+        return md.digest(bytes).joinToString("") { String.format(Locale.ROOT, "%02x", it) }
     }
 }
 

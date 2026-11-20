@@ -245,7 +245,7 @@ The *portable distribution layout* (what ends up on the USB stick) is defined in
 
 ## Phase 1 — what is implemented
 
-Implemented and automated-tested (the full suite is now 244 tests — see [docs/TESTING.md](docs/TESTING.md)):
+Implemented and automated-tested (the full suite is now 255 tests — see [docs/TESTING.md](docs/TESTING.md)):
 
 - **Bundled runtime** — Node v24.21.0 per platform, downloaded from nodejs.org with SHA-256
   verified *before* unpacking, and a whole-tree hash recorded on install so tampering is

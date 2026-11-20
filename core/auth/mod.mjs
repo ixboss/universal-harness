@@ -24,8 +24,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { devicePaths } from '../paths/mod.mjs';
+import { writeFileAtomicSync } from '../portable/mod.mjs';
 import { now, newRequestId } from '../protocol/mod.mjs';
-import { redact } from '../errors/mod.mjs';
+import { redact, UhError, ERR } from '../errors/mod.mjs';
 import { PAIR_FAIL } from '../protocol/mod.mjs';
 
 const DEVICES_FILE = 'devices.json';
@@ -42,11 +43,24 @@ export function createAuthStore({ p, log = null, identity, tokenTtlMs = TOKEN_TT
 
   // ---------- persistence ----------
   function loadDevices() {
+    let raw;
     try {
-      const raw = fs.readFileSync(devicesPath, 'utf8');
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed.devices) ? parsed.devices : [];
-    } catch { return []; }
+      raw = fs.readFileSync(devicesPath, 'utf8');
+    } catch (e) {
+      if (e && e.code === 'ENOENT') return [];
+      throw e;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      // Fail loudly: treating a corrupt file as empty would make the next
+      // pair() persist a devices list holding only the new record, silently
+      // wiping every other pairing.
+      throw new UhError(ERR.UH_INTERNAL, `devices file is corrupt: ${e.message}`, { path: devicesPath },
+        `Fix or delete ${devicesPath}; deleting forgets every paired device and they must re-pair.`);
+    }
+    return Array.isArray(parsed.devices) ? parsed.devices : [];
   }
   function saveDevices(devices) {
     atomicWrite(devicesPath, { v: 1, devices });
@@ -325,19 +339,9 @@ function safeEqual(a, b) {
 }
 
 function atomicWrite(file, obj) {
-  // The temp name is process-qualified: two node processes (e.g. `uh pair` and
-  // `uh serve`) may atomically write files in the same device-local directory
-  // concurrently, and a shared ".tmp" name would let one rename yank the other's
-  // in-flight file away (rename ENOENT).
-  const tmp = `${file}.${process.pid}.tmp`;
-  const fd = fs.openSync(tmp, 'w', 0o600);
-  try {
-    fs.writeSync(fd, JSON.stringify(obj, null, 2));
-    fs.fsyncSync(fd); // durable before the rename, so a crash cannot leave an empty file
-  } finally {
-    fs.closeSync(fd);
-  }
-  fs.renameSync(tmp, file);
+  // Canonical helper: process-qualified temp name (two node processes may write
+  // the same device-local dir concurrently), fsync before rename, 0o600.
+  writeFileAtomicSync(file, JSON.stringify(obj, null, 2), { mode: 0o600 });
 }
 
 export { newRequestId };

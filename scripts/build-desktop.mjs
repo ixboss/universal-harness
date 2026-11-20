@@ -190,11 +190,16 @@ function archiveRoot(root, target, opts) {
   return dest;
 }
 
-/** System tar path: Windows ships bsdtar in System32; elsewhere use PATH. */
+/** System tar path: Windows ships bsdtar in System32; elsewhere prefer bsdtar. */
 function resolveSystemTar() {
   if (process.platform === 'win32') {
     const sysTar = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
     if (fs.existsSync(sysTar)) return sysTar;
+  } else if (spawnSync('bsdtar', ['--version'], { stdio: 'ignore' }).status === 0) {
+    // GNU tar cannot write --format zip; bsdtar (libarchive-tools) can. The
+    // release workflow installs it on ubuntu; macOS tar IS bsdtar under the
+    // name `tar`, so falling back there is still correct.
+    return 'bsdtar';
   }
   return 'tar';
 }

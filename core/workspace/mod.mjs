@@ -15,6 +15,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { UhError, ERR } from '../errors/mod.mjs';
 import { ensureDir, toPortableRelative } from '../paths/mod.mjs';
+import { writeFileAtomicSync } from '../portable/mod.mjs';
 
 const REGISTRY_SCHEMA = 1;
 
@@ -28,8 +29,15 @@ export function createWorkspaceStore({ root, p, log = consoleShim() }) {
 
   function readJson(file, fallback) {
     if (!fs.existsSync(file)) return fallback;
-    try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
-    catch { return fallback; }
+    // Parse failures fail loudly: treating a corrupt file as the fallback
+    // silently resets it, and the next save persists the reset.
+    let parsed;
+    try { parsed = JSON.parse(fs.readFileSync(file, 'utf8')); }
+    catch (e) {
+      throw new UhError(ERR.WORKSPACE_INVALID, `${path.basename(file)} is corrupt: ${e.message}`, { path: file },
+        `Fix or delete ${file}; deleting re-initialises this file's state.`);
+    }
+    return parsed;
   }
 
   /** Initialize the workspace identity marker once. Refuses silent overwrite. */
@@ -164,9 +172,9 @@ function slugify(name) {
 }
 
 function atomicWrite(file, obj) {
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2));
-  fs.renameSync(tmp, file);
+  // Canonical helper: process-qualified temp name + fsync (replaces a shared
+  // ".tmp" write that lost updates under two concurrent processes).
+  writeFileAtomicSync(file, JSON.stringify(obj, null, 2));
 }
 
 function consoleShim() { return { info() {}, warn() {}, debug() {}, error() {} }; }

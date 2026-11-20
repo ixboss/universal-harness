@@ -18,22 +18,27 @@ jobs:
         include:
           # Per-target bundles (--no-universal: the universal bundle is built
           # exactly once below, not three times under colliding filenames).
-          - { os: windows-latest, targets: '--target win-x64 --no-universal' }
-          - { os: ubuntu-latest, targets: '--target linux-x64 --no-universal' }
-          - { os: macos-latest, targets: '--target macos-arm64 --no-universal' }
+          - { os: windows-latest, targets: '--target win-x64 --no-universal', artifact: 'dist-windows' }
+          - { os: ubuntu-latest, targets: '--target linux-x64 --no-universal', artifact: 'dist-linux' }
+          - { os: macos-latest, targets: '--target macos-arm64 --no-universal', artifact: 'dist-macos' }
           # The universal bundle (all runtimes + all launchers), built once.
-          - { os: ubuntu-latest, targets: '--universal-only' }
+          # Its artifact name must differ from the linux-x64 leg's: upload-artifact
+          # v4 rejects duplicate names, and a collision fails the whole release.
+          - { os: ubuntu-latest, targets: '--universal-only', artifact: 'dist-universal' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Install bsdtar (GNU tar cannot write --format zip)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: sudo apt-get update && sudo apt-get install -y libarchive-tools
       - name: Build portable bundle(s)
         run: node scripts/build-desktop.mjs ${{ matrix.targets }} --out dist
       - name: Stage artifacts for the release job
         uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ matrix.os }}
+          name: ${{ matrix.artifact }}
           path: |
             dist/*.zip
             dist/*.tar.gz

@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
@@ -66,7 +67,13 @@ class NodeServerService : Service() {
             ) { line -> android.util.Log.i(TAG, "node: $line") }
             server = node
             try {
+                // A stop request landing during staging or start() cancels this
+                // job at the next suspension; without these checks the guest node
+                // would keep running unsupervised (stopNode() saw server == null,
+                // or start() was mid-flight and not cancellable).
+                if (!isActive) { runCatching { node.stop() }; return@launch }
                 val ep = node.start()
+                if (!isActive) { runCatching { node.stop() }; return@launch }
                 endpointState.value = ep
                 val nsd = NsdNodeAdvertisement(this@NodeServerService)
                 nsd.register(NsdNodeAdvertisement.serviceName(ep.nodeId), ep.port)

@@ -13,7 +13,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { sha256File, sha256Bytes } from '../integrity/mod.mjs';
 import { UhError, ERR } from '../errors/mod.mjs';
-import { ensureDir } from '../paths/mod.mjs';
+import { assertSafeRelativePath, ensureDir } from '../paths/mod.mjs';
+import { acquireWorkspaceLock } from '../bundle/mod.mjs';
 
 const BACKUP_SCHEMA = 1;
 const BACKED_UP = [
@@ -105,24 +106,33 @@ export async function restoreBackup({ root, p, ref, force = false, log = console
       'The backup is corrupted; choose another ref from `uh backup` history or restore from a second copy.');
   }
 
-  // Newer-state guard: a live registry updated after the backup was taken is
-  // not overwritten silently.
-  const liveReg = path.join(root, 'data', 'workspace', 'registry.json');
-  if (fs.existsSync(liveReg) && !force) {
-    const liveMtime = fs.statSync(liveReg).mtimeMs;
-    if (liveMtime > m.createdAt) {
-      throw new UhError(ERR.BACKUP_CONFLICT,
-        `live workspace metadata (updated ${new Date(liveMtime).toISOString()}) is newer than backup ${ref}`,
-        { backupAt: new Date(m.createdAt).toISOString() },
-        'Restore deliberately refuses to overwrite newer state. Re-run with --force only if the newer state is wrong.');
+  // Hold the workspace lock for the check + commit: restore overwrites live
+  // metadata, so it must not race a concurrent serve/import that writes the
+  // same files. verifyBackup above is read-only and stays outside the lock.
+  const release = acquireWorkspaceLock(root, p, 'restore');
+  try {
+    // Newer-state guard: a live registry updated after the backup was taken is
+    // not overwritten silently.
+    const liveReg = path.join(root, 'data', 'workspace', 'registry.json');
+    if (fs.existsSync(liveReg) && !force) {
+      const liveMtime = fs.statSync(liveReg).mtimeMs;
+      if (liveMtime > m.createdAt) {
+        throw new UhError(ERR.BACKUP_CONFLICT,
+          `live workspace metadata (updated ${new Date(liveMtime).toISOString()}) is newer than backup ${ref}`,
+          { backupAt: new Date(m.createdAt).toISOString() },
+          'Restore deliberately refuses to overwrite newer state. Re-run with --force only if the newer state is wrong.');
+      }
     }
-  }
 
-  for (const e of m.entries) {
-    const dst = path.join(root, e.from);
-    ensureDir(path.dirname(dst));
-    fs.copyFileSync(path.join(dir, e.to), dst);
-  }
+    for (const e of m.entries) {
+      // e.from travels in the manifest; the checksum proves self-consistency,
+      // not benignness. Reject anything that would write outside the root.
+      assertSafeRelativePath(e.from);
+      const dst = path.join(root, e.from);
+      ensureDir(path.dirname(dst));
+      fs.copyFileSync(path.join(dir, e.to), dst);
+    }
+  } finally { release(); }
   log.info('backup restored', { ref, files: m.entries.length });
   return { ref, restored: m.entries.map((e) => e.from) };
 }

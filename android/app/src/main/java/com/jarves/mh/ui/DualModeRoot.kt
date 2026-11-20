@@ -207,6 +207,9 @@ private fun LanRemotePane(prefs: DualModePreferences) {
     var client by remember { mutableStateOf<UhNodeClient?>(null) }
     var nodeId by remember { mutableStateOf<String?>(null) }
     var sessionId by remember { mutableStateOf<String?>(null) }
+    // Stays set until task.start succeeds, so a retry after a timeout resends the
+    // SAME id and the node never creates a duplicate task (protocol idempotency).
+    var clientRequestId by remember { mutableStateOf<String?>(null) }
     var prompt by remember { mutableStateOf("") }
 
     fun log(line: String) { output = output + listOf(line.take(4000)) }
@@ -351,31 +354,52 @@ private fun LanRemotePane(prefs: DualModePreferences) {
                             try {
                                 withContext(Dispatchers.IO) {
                                     val c = client ?: throw IllegalStateException("not connected")
+                                    val reqId = clientRequestId
+                                        ?: java.util.UUID.randomUUID().toString().also { clientRequestId = it }
                                     val reply = c.request(
                                         "task.start",
                                         buildMap {
                                             sessionId?.let { put("sessionId", it) }
                                             put("prompt", prompt)
+                                            put("clientRequestId", reqId)
                                         },
                                     )
                                     val taskId = reply.optJSONObject("payload")?.optString("taskId")
+                                    clientRequestId = null // settled; the next submit is a new logical task
                                     log("task started: $taskId")
                                     // A bounded observation loop: the node streams durable
                                     // events; the controller re-reads history to follow the task.
                                     // delay() (not Thread.sleep) so the shared IO thread stays free.
                                     for (poll in 0 until 30) {
-                                        val history = c.request(
-                                            "task.history",
-                                            mapOf("taskId" to taskId, "limit" to 50),
-                                            timeoutMs = 20_000,
-                                        )
-                                        val events = history.optJSONObject("payload")?.optJSONArray("events")
-                                        if (events != null && events.length() > 0) {
-                                            for (i in 0 until events.length()) {
-                                                log(events.optJSONObject(i)?.optString("kind") ?: "")
+                                        // Follow cursor pagination: a task with more than one
+                                        // page of events must not lose the rest of its history.
+                                        var cursor: String? = null
+                                        var sawAny = false
+                                        while (true) {
+                                            val history = c.request(
+                                                "task.history",
+                                                buildMap {
+                                                    put("taskId", taskId)
+                                                    put("limit", 50)
+                                                    cursor?.let { put("cursor", it) }
+                                                },
+                                                timeoutMs = 20_000,
+                                            )
+                                            val payload = history.optJSONObject("payload")
+                                            val events = payload?.optJSONArray("events")
+                                            if (events != null) {
+                                                for (i in 0 until events.length()) {
+                                                    log(events.optJSONObject(i)?.optString("kind") ?: "")
+                                                }
+                                                sawAny = sawAny || events.length() > 0
                                             }
-                                            break
+                                            val next = if (payload?.optBoolean("truncated") == true) {
+                                                payload?.optString("nextCursor") ?: ""
+                                            } else ""
+                                            if (next.isNullOrEmpty()) break
+                                            cursor = next
                                         }
+                                        if (sawAny) break
                                         if (poll == 29) break
                                         delay(2000)
                                     }

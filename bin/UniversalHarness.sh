@@ -23,7 +23,10 @@ case "$UNAME_S" in
 esac
 ARCH_DIR=$([ "$UNAME_M" = "aarch64" ] || [ "$UNAME_M" = "arm64" ] && echo "arm64" || echo "x64")
 
-NODE_EXE="$ROOT/runtime/node/$DISTRO-$ARCH_DIR/node-v24.21.0-$DISTRO-$ARCH_DIR/bin/node"
+# Resolve the runtime dir by glob, not a hardcoded version: the manifest is the
+# pin source, and a manifest bump must not silently brick every launcher.
+NODE_DIR=$(ls -d "$ROOT"/runtime/node/$DISTRO-$ARCH_DIR/node-v*-$DISTRO-$ARCH_DIR 2>/dev/null | head -n 1)
+NODE_EXE="${NODE_DIR:-/nonexistent}/bin/node"
 
 if [ ! -x "$NODE_EXE" ]; then
   echo "RUNTIME_MISSING: bundled Node runtime not found at $NODE_EXE" >&2
