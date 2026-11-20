@@ -94,6 +94,13 @@ class AppUpdater(
         if (info.sha256.isNotBlank()) {
             val actual = sha256(partial)
             check(actual.equals(info.sha256, ignoreCase = true)) { "Downloaded APK failed its SHA-256 verification" }
+        } else {
+            // Audit 2.3: a release build must never install an update whose
+            // manifest carries no hash — that would silently disable tamper
+            // detection. Debug builds keep the lenient path so the update
+            // flow can be exercised against ad-hoc manifests (Settings →
+            // Update channel) before the release manifest is filled.
+            check(BuildConfig.DEBUG) { "Update manifest carries no SHA-256; refusing to install" }
         }
         verifyApk(partial, info.versionCode)
         if (target.exists()) target.delete()

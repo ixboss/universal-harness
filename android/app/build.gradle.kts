@@ -6,6 +6,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.cyclonedx.bom") // Audit 2.5: CycloneDX SBOM (version pinned in the root block)
 }
 
 val testSecrets = Properties().apply {
@@ -60,6 +61,22 @@ val hasUploadSigning = listOf(
     uploadKeyAlias,
     uploadKeyPassword,
 ).all { !it.isNullOrBlank() }
+
+// Audit 2.2: in CI a *release* build must never silently use the throwaway
+// auto-generated fallback keystore — that ships an APK that cannot serve as an
+// upgrade path for real installs. Locally the fallback stays so zero-setup
+// builds keep working. Scoped to the task graph so debug builds and `help`
+// in CI are unaffected.
+gradle.taskGraph.whenReady {
+    val wantsRelease = allTasks.any { it.name.contains("Release", ignoreCase = true) }
+    if (wantsRelease && !hasUploadSigning && !System.getenv("CI").isNullOrBlank()) {
+        throw GradleException(
+            "release build in CI requires upload signing: set UH_KEYSTORE_PATH, " +
+                "UH_KEYSTORE_PASSWORD, UH_KEY_ALIAS, and UH_KEY_PASSWORD (CI decodes " +
+                "them from the UH_KEYSTORE_BASE64 secret)"
+        )
+    }
+}
 val runtimeReleaseBaseUrl =
     "https://github.com/ixboss/universal-harness/releases/download/runtime-v1.0.0"
 val appUpdateManifestUrl =

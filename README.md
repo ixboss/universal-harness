@@ -10,7 +10,7 @@ Server), and ready-made **portable USB bundles**.
 <p align="center">
   <img alt="version" src="https://img.shields.io/badge/version-1.0.0-22c55e?style=flat-square" />
   <img alt="license" src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" />
-  <img alt="tests" src="https://img.shields.io/badge/tests-255%20passing-22c55e?style=flat-square" />
+  <img alt="tests" src="https://img.shields.io/badge/tests-275%20passing-22c55e?style=flat-square" />
   <img alt="platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Android-0ea5e9?style=flat-square" />
   <img alt="no cloud" src="https://img.shields.io/badge/cloud-not%20required-64748b?style=flat-square" />
 </p>
@@ -53,8 +53,9 @@ uh import --bundle ./backup.uhbundle   # verify-then-commit; never overwrites
 > workspace bundles ([ADR-011](docs/adr/ADR-011-workspace-bundles.md)); stage S4 (the Android
 > leg) is outstanding and requires the physical device. Still deliberately out of scope:
 > hardening soak (Phase 6), the update system, and terminal execution (hard-disabled).
-> Automated suite: 255 tests passing on Windows
-> (`node --test tests/*.test.mjs`); Android JVM suite 270/270 across both flavors. Verification
+> Automated suite: 275 tests passing on Windows (`node --test tests/*.test.mjs`); 249 passed /
+> 1 skipped on Linux x64 / Node 22 (2026-11-14 audit run); Android JVM suite 270/270 across both
+> flavors. CI verifies the matrix — ubuntu/windows/macos x Node 20/22/24. Verification
 > status per platform is recorded honestly in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md):
 > **Windows x64 smoke-executed (14/15; stage 10 blocked by the provider account's own quota —
 > R-21)**, **Android: real-device verified through the Phase 3A runtime chain, the Phase 3B

@@ -278,3 +278,133 @@ test('recovery: a queued task settles as failed when no executor can run it', as
     assert.match(failureEvent.payload.reason || '', /executor/);
   });
 });
+
+test('audit 1.1: task.start runs the executor inside the task project directory, never the portable root', async () => {
+  await withStack(async (stack) => {
+    const ctxs = [];
+    const server = createNodeServer({
+      root: stack.root, p: stack.p,
+      identity: stack.identity, auth: stack.auth, events: stack.events,
+      workspace: stack.workspace,
+      executorFactory: (ctx) => { ctxs.push(ctx); return createFakeExecutor({ frames: 1 }); },
+      uhVersion: '0.3.0',
+    });
+    const session = await buildPairedSession(stack, { server });
+    const proj = stack.workspace.createProject({ name: 'contained' });
+    const expectedDir = path.resolve(stack.root, 'data', 'projects', 'contained');
+
+    const reply = await session.wire.request('task.start', { projectId: proj.projectId, prompt: 'work' }, 'req_cwd_0001');
+    assert.equal(reply.ok, true, JSON.stringify(reply.payload));
+    for (let i = 0; i < 100 && ctxs.length === 0; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.equal(ctxs.length, 1, 'the executor factory received a per-task context');
+    assert.equal(path.resolve(ctxs[0].cwd), path.resolve(expectedDir));
+    assert.ok(ctxs[0].cwd.startsWith(path.resolve(stack.root, 'data', 'projects')),
+      'the task cwd stays inside data/projects/');
+  });
+});
+
+test('audit 1.1: a task with an unresolvable project falls back inside data/projects (never the portable root)', async () => {
+  await withStack(async (stack) => {
+    const ctxs = [];
+    const server = createNodeServer({
+      root: stack.root, p: stack.p,
+      identity: stack.identity, auth: stack.auth, events: stack.events,
+      workspace: stack.workspace,
+      executorFactory: (ctx) => { ctxs.push(ctx); return createFakeExecutor({ frames: 1 }); },
+      uhVersion: '0.3.0',
+    });
+    const session = await buildPairedSession(stack, { server });
+    // craftTask uses projectId null; drive it through a real task.start with a
+    // projectId the node does not know.
+    const reply = await session.wire.request(
+      'task.start', { projectId: `proj_${'e'.repeat(32)}`, prompt: 'work' }, 'req_cwd_0002');
+    assert.equal(reply.ok, true, JSON.stringify(reply.payload));
+    for (let i = 0; i < 100 && ctxs.length === 0; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.equal(ctxs.length, 1);
+    assert.equal(path.resolve(ctxs[0].cwd), path.resolve(stack.root, 'data', 'projects'));
+  });
+});
+
+test('audit 1.6: an unauthenticated connection is dropped at the pre-auth deadline', async () => {
+  await withStack(async (stack) => {
+    const server = createNodeServer({
+      root: stack.root, p: stack.p,
+      identity: stack.identity, auth: stack.auth, events: stack.events,
+      workspace: stack.workspace, executorFactory: stack.executorFactory,
+      preAuthTimeoutMs: 30,
+      uhVersion: '0.3.0',
+    });
+    const pair = createMemoryTransportPair();
+    const wire = wireClient(pair.client);
+    server.handleConnection(pair.node);
+    const hello = await wire.next((e) => e.payload?.kind === 'node.hello');
+    assert.ok(hello, 'the greeting arrives');
+    let closed = false;
+    for (let i = 0; i < 100 && !closed; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      closed = pair.client.closed;
+    }
+    assert.ok(closed, 'the deadline closes a connection that never authenticates');
+  });
+});
+
+test('audit 1.6: an authenticated connection survives past the deadline', async () => {
+  await withStack(async (stack) => {
+    const server = createNodeServer({
+      root: stack.root, p: stack.p,
+      identity: stack.identity, auth: stack.auth, events: stack.events,
+      workspace: stack.workspace, executorFactory: stack.executorFactory,
+      preAuthTimeoutMs: 40,
+      uhVersion: '0.3.0',
+    });
+    const session = await buildPairedSession(stack, { server, scopes: ['read-only'] });
+    await new Promise((r) => setTimeout(r, 120));
+    const reply = await session.wire.request('node.status', {}, 'req_alive_01');
+    assert.equal(reply.ok, true, 'the authenticated connection is still served');
+  });
+});
+
+test('audit 1.6: repeated auth failures back off the remote address, then expire', async () => {
+  await withStack(async (stack) => {
+    let now = 1_000_000;
+    const server = createNodeServer({
+      root: stack.root, p: stack.p,
+      identity: stack.identity, auth: stack.auth, events: stack.events,
+      workspace: stack.workspace, executorFactory: stack.executorFactory,
+      preAuthTimeoutMs: 0,
+      authFailureLimit: 3,
+      authFailureWindowMs: 60_000,
+      nowMs: () => now,
+      uhVersion: '0.3.0',
+    });
+    const open = () => {
+      const pair = createMemoryTransportPair();
+      const wire = wireClient(pair.client);
+      server.handleConnection(pair.node);
+      return { pair, wire };
+    };
+
+    // Three failing auth.connect attempts: a real paired device id with a
+    // signature over the wrong challenge (schema-valid, verification fails).
+    const device = await buildPairedSession(stack, { server, scopes: ['read-only'] });
+    const wrongSig = sign(null, Buffer.from('not the node challenge', 'utf8'), device.devicePrivateKey).toString('base64');
+    const first = open();
+    await first.wire.next((e) => e.payload?.kind === 'node.hello');
+    for (let i = 0; i < 3; i++) {
+      const r = await first.wire.request('auth.connect', { deviceId: device.deviceId, sigB64: wrongSig }, `req_fail_${i}x`);
+      assert.equal(r.ok, false);
+    }
+    first.pair.client.close('done');
+
+    // The next connection from the same remote is refused outright.
+    const second = open();
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(second.pair.client.closed, true, 'backed-off remote is refused without a greeting');
+
+    // After the failure window expires on the (injectable) clock, admission resumes.
+    now += 61_000;
+    const third = open();
+    const hello = await third.wire.next((e) => e.payload?.kind === 'node.hello');
+    assert.ok(hello, 'the backoff expires with the failure window');
+  });
+});

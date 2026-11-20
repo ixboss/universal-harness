@@ -237,7 +237,7 @@ physical moto g 5G plus (nairo, Android 11 / API 30, arm64-v8a) over the real Wi
 `tests/manual/gate-f-controller.mjs` phase A 22/22 + phase B 6/6 = **28 PASS / 0 FAIL** (the node
 reported `nodeKind=android`; linked continuation, `clientRequestId` idempotency, durable replay,
 cursor-paginated history and multi-controller isolation all verified). Evidence:
-`diagnostics/gate-f/gatef-device-evidence.txt`. Provider-backed completion remains blocked by R-21
+`docs/evidence/gatef-device-evidence.txt`. Provider-backed completion remains blocked by R-21
 (environmental, unchanged).
 
 **Out of scope (unchanged):** synchronization (Phase 5), hardening soak (Phase 6),
@@ -271,10 +271,9 @@ migration matrix including Android, device sync.
 
 The format, the conflict policy and the security rationale are recorded in
 [ADR-011](adr/ADR-011-workspace-bundles.md). Verification: JS suite 244/244 (24 new bundle
-tests), schema lint 7 files / 0 problems. `validate-repo.mjs` remains environment-blocked on
-this host (its `git ls-files` subprocess cannot spawn — `EBUSY`); the equivalent content checks
-pass with the file list supplied out-of-band, and that substitution is labelled, never claimed
-as the script passing.
+tests), schema lint 7 files / 0 problems. `validate-repo.mjs` (tests/protocol/) now runs
+clean on this host as well — 2026-11-14: tracked files 654, 7 files / 104 refs, 0 problems
+(the earlier `git ls-files` EBUSY blockage no longer reproduces).
 
 **Not in Phase 5 scope:** `sync.workspace` as a wire operation (a local bundle satisfies the
 requirement — ADR-011), live device-to-device sync, distributed conflict resolution, SAF

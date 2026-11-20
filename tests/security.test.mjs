@@ -12,6 +12,7 @@ import { redact, redactObject, describeEnvSafe } from '../core/errors/mod.mjs';
 import { createSecureStorage } from '../core/secrets/mod.mjs';
 import { createConfig } from '../core/config/mod.mjs';
 import { isWindows } from '../core/platform/mod.mjs';
+import { taskEnvAllowlist } from '../core/executor/mod.mjs';
 
 // Deliberately non-real inputs to the redaction tests below.
 const SECRET = 'sk-deadbeefcafebabe1234567890abcdef'; // uh-secret-fixture
@@ -119,3 +120,77 @@ function walk(dir) {
   }
   return out;
 }
+
+test('audit 1.1: the task environment allowlist drops unrelated secrets, keeps runtime + provider vars', () => {
+  const allow = taskEnvAllowlist({
+    PATH: '/usr/bin', SystemRoot: 'C:\\Windows', COMSPEC: 'cmd.exe',
+    HOME: '/home/op', TEMP: '/tmp',
+    DSH_HOME: '/home/op/.dsh',
+    HTTP_PROXY: 'http://proxy:8080', NO_PROXY: 'localhost',
+    DEEPSEEK_API_KEY: 'sk-provider', UH_ADAPTER: 'deepseek', UH_TUNE_X: '1',
+    // Unrelated operator secrets must never reach a task child:
+    AWS_SECRET_ACCESS_KEY: 'aws-secret', MY_DB_PASSWORD: 'hunter2',
+    GITHUB_TOKEN: 'ghp_x', STRIPE_KEY: 'sk_live_x',
+  });
+  assert.equal(allow.PATH, '/usr/bin');
+  assert.equal(allow.SystemRoot, 'C:\\Windows');
+  assert.equal(allow.DSH_HOME, '/home/op/.dsh');
+  assert.equal(allow.HTTP_PROXY, 'http://proxy:8080');
+  assert.equal(allow.DEEPSEEK_API_KEY, 'sk-provider');
+  assert.equal(allow.UH_ADAPTER, 'deepseek');
+  assert.equal(allow.UH_TUNE_X, '1');
+  assert.equal('AWS_SECRET_ACCESS_KEY' in allow, false);
+  assert.equal('MY_DB_PASSWORD' in allow, false);
+  assert.equal('GITHUB_TOKEN' in allow, false);
+  assert.equal('STRIPE_KEY' in allow, false);
+});
+
+test('audit 1.5: DPAPI store works with an apostrophe in the device path (no PowerShell quoting break)', async () => {
+  if (!isWindows) { test.skip('DPAPI backend is Windows-only'); return; }
+  // Audit 1.5: the temp file path used to be interpolated inside a
+  // single-quoted PowerShell string, so a path like C:\Users\O'Brien\… broke
+  // the command. It now travels through an environment variable.
+  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'uh-obrien-'));
+  try {
+    const p = { data: path.join(root, 'data'), device: path.join(root, "O'Brien's-device") };
+    const storage = createSecureStorage({ root, p });
+    await storage.set('provider-key', SECRET);
+    assert.equal(await storage.get('provider-key'), SECRET);
+    await storage.remove('provider-key');
+    assert.equal(await storage.get('provider-key'), null);
+  } finally { await fs.promises.rm(root, { recursive: true, force: true }); }
+});
+
+test('audit 3.2: explicit unsupported backend fails closed (never plaintext)', async () => {
+  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'uh-backend-'));
+  const prev = process.env.UH_SECRET_BACKEND;
+  try {
+    process.env.UH_SECRET_BACKEND = 'definitely-not-a-backend';
+    const p = { data: path.join(root, 'data'), device: path.join(root, 'device') };
+    const storage = createSecureStorage({ root, p });
+    assert.equal(storage.describe().backend, 'definitely-not-a-backend');
+    await assert.rejects(() => storage.set('k', 'v'),
+      (e) => e.code === 'SECURE_STORAGE_UNAVAILABLE',
+      'an unknown backend must fail explicitly, never store plaintext');
+  } finally {
+    if (prev === undefined) delete process.env.UH_SECRET_BACKEND; else process.env.UH_SECRET_BACKEND = prev;
+    await fs.promises.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('audit 3.2: UH_SECRET_BACKEND env override selects the backend by name', () => {
+  const root = os.tmpdir();
+  const p = { data: root, device: root };
+  const cases = [['dpapi', 'dpapi'], ['keychain', 'keychain'], ['libsecret', 'libsecret']];
+  const prev = process.env.UH_SECRET_BACKEND;
+  try {
+    for (const [env, expected] of cases) {
+      process.env.UH_SECRET_BACKEND = env;
+      const storage = createSecureStorage({ root, p });
+      assert.equal(storage.describe().backend, expected);
+      assert.equal(storage.describe().supported, true);
+    }
+  } finally {
+    if (prev === undefined) delete process.env.UH_SECRET_BACKEND; else process.env.UH_SECRET_BACKEND = prev;
+  }
+});

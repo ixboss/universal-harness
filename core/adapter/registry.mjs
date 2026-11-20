@@ -133,14 +133,14 @@ export function createNamedAdapter(name, opts = {}) {
     case 'claude-code':
       return createCliProcessAdapter({ ...base, ...opts, timeouts: T,
         command: opts.command || opts.env?.UH_CLAUDE_COMMAND || 'claude',
-        args: opts.args || (opts.env?.UH_CLAUDE_ARGS ? opts.env.UH_CLAUDE_ARGS.split(' ').filter(Boolean) : ['-p', '--output-format', 'stream-json', '--verbose']),
-        promptMode: 'arg',
+        args: opts.args || (opts.env?.UH_CLAUDE_ARGS ? shellWords(opts.env.UH_CLAUDE_ARGS) : ['-p', '--output-format', 'stream-json', '--verbose']),
+        promptMode: opts.promptMode || 'arg',
         label: 'claude-code' });
     case 'gemini-cli':
       return createCliProcessAdapter({ ...base, ...opts, timeouts: T,
         command: opts.command || opts.env?.UH_GEMINI_COMMAND || 'gemini',
-        args: opts.args || (opts.env?.UH_GEMINI_ARGS ? opts.env.UH_GEMINI_ARGS.split(' ').filter(Boolean) : ['-p']),
-        promptMode: 'arg',
+        args: opts.args || (opts.env?.UH_GEMINI_ARGS ? shellWords(opts.env.UH_GEMINI_ARGS) : ['-p']),
+        promptMode: opts.promptMode || 'arg',
         label: 'gemini-cli' });
     default:
       throw new UhError(ERR.UH_INTERNAL, `adapter "${id}" has no factory`);
@@ -168,6 +168,47 @@ function makeEmitter(log) {
 }
 
 function noop() {}
+
+/**
+ * Audit 1.1: spawn children with the environment they are given, verbatim —
+ * never merged with process.env, which carries operator-wide secrets. An
+ * empty/absent env inherits the parent (Node's default) so standalone adapter
+ * construction keeps working; the executor factory passes a full allowlisted
+ * environment (taskEnvAllowlist) on the task path.
+ */
+function spawnEnv(env) {
+  return env && Object.keys(env).length > 0 ? env : undefined;
+}
+
+/**
+ * Audit 1.2: split an env-provided argument string into argv the way a shell
+ * would — whitespace-separated, with single- and double-quoted runs kept
+ * whole. `UH_CLAUDE_ARGS` / `UH_GEMINI_ARGS` used a bare split(' '), which
+ * made quoted paths and multi-word values impossible to express.
+ * shortcut: no backslash escapes inside quotes; upgrade if a CLI needs them.
+ */
+export function shellWords(value) {
+  const out = [];
+  let cur = '';
+  let has = false;
+  let quote = null;
+  for (const ch of String(value || '')) {
+    if (quote) {
+      if (ch === quote) quote = null;
+      else cur += ch;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; has = true; continue; }
+    if (ch === ' ' || ch === '\t') {
+      if (has || cur) { out.push(cur); cur = ''; has = false; }
+      continue;
+    }
+    cur += ch;
+    has = true;
+  }
+  if (has || cur) out.push(cur);
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // Resilience chain
@@ -274,7 +315,7 @@ const SDK_NOTIFICATIONS_FALLBACK = ['subagent.started', 'subagent.finished'];
  * and initialize() verify reachability instead, and the prompt's completion
  * settles the task (exit code 0) exactly like a child exit.
  */
-export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, label = 'openai-compatible', log = consoleShim(), timeouts = {} }) {
+export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, allowInsecureRemote = false, historyMessages = 40, label = 'openai-compatible', log = consoleShim(), timeouts = {} }) {
   log = log || consoleShim();
   const T = { ...DEFAULT_TIMEOUTS, ...timeouts };
   const { on, emit } = makeEmitter(log);
@@ -282,6 +323,36 @@ export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, label = 'opena
   let exited = null;            // {code, signal} once the current prompt settled
   let lastError = null;
   const base = String(baseUrl || '').replace(/\/+$/, '');
+
+  // Audit 3.1: per-session conversation history. The HTTP/SSE endpoint is
+  // stateless, so without this every prompt was a context-free single turn.
+  // Capped (oldest dropped) so a long session cannot grow the request without
+  // bound; a failed turn is never recorded. sessionId is what the executor
+  // passes — a linked continuation keeps its history, a new session starts
+  // fresh.
+  const histories = new Map();  // sessionId -> [{role, content}, ...]
+  // Upper bound on tracked sessions; oldest is evicted when exceeded.
+  const HISTORY_MAX_SESSIONS = 128;
+
+  // Audit 1.4: an API key must never be sent to a plain-HTTP non-loopback
+  // endpoint. Loopback and https are fine; anything else needs the explicit
+  // adapter option `allowInsecureRemote: true` (operator opt-in, e.g. a LAN
+  // llama.cpp box), checked here — before any request is ever made.
+  {
+    let u = null;
+    try { u = new URL(base); } catch { /* invalid URL: fetch will fail; not this check's job */ }
+    if (u && u.protocol === 'http:') {
+      const host = u.hostname.toLowerCase();
+      const loopback = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
+        || /^127\.\d+\.\d+\.\d+$/.test(host) || host.endsWith('.localhost');
+      if (!loopback && !allowInsecureRemote) {
+        throw new UhError(ERR.DSH_START_FAILED,
+          `${label}: refusing plain-HTTP non-loopback baseUrl "${base}" — set allowInsecureRemote: true on the adapter to send credentials there`,
+          { baseUrl: base },
+          'Use https, or a loopback address, or explicitly allow the insecure endpoint in the adapter config.');
+      }
+    }
+  }
 
   function headers() {
     const h = { 'content-type': 'application/json', accept: 'text/event-stream' };
@@ -319,10 +390,13 @@ export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, label = 'opena
     get pid() { return null; },
     timeouts: T,
 
-    async prompt({ text }) {
+    async prompt({ sessionId = null, text }) {
       exited = null;
       controller = new AbortController();
       let output = '';
+      const sessionKey = String(sessionId || 'default');
+      const history = histories.get(sessionKey) || [];
+      const messages = [...history, { role: 'user', content: String(text || '') }];
       const timer = T.prompt > 0 ? setTimeout(() => controller.abort(new UhError(ERR.DSH_TIMEOUT, `${label} prompt exceeded ${T.prompt}ms`)), T.prompt) : null;
       try {
         const res = await fetch(`${base}/chat/completions`, {
@@ -330,7 +404,7 @@ export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, label = 'opena
           headers: headers(),
           signal: controller.signal,
           redirect: 'error',
-          body: JSON.stringify({ model, stream: true, messages: [{ role: 'user', content: String(text || '') }] }),
+          body: JSON.stringify({ model, stream: true, messages }),
         });
         if (!res.ok || !res.body) {
           const detail = await res.text().catch(() => '');
@@ -341,30 +415,37 @@ export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, label = 'opena
         const decoder = new TextDecoder();
         let buf = '';
         let done = false;
+        const handleLine = (line) => {
+          if (!line || !line.startsWith('data:')) return false;
+          const data = line.slice(5).trim();
+          if (data === '[DONE]') return true;
+          try {
+            const evt = JSON.parse(data);
+            const delta = evt?.choices?.[0]?.delta?.content;
+            if (typeof delta === 'string' && delta.length) {
+              output += delta;
+              emit('event', { delta });
+            }
+            const reasoning = evt?.choices?.[0]?.delta?.reasoning_content ?? evt?.choices?.[0]?.delta?.reasoning;
+            if (typeof reasoning === 'string' && reasoning.length) emit('reasoning', { reasoning });
+          } catch {
+            emit('event', { raw: data.slice(0, 2000) });
+          }
+          return false;
+        };
         for await (const chunk of res.body) {
           buf += decoder.decode(chunk, { stream: true });
           let idx;
           while ((idx = buf.indexOf('\n')) >= 0) {
             const line = buf.slice(0, idx).trim();
             buf = buf.slice(idx + 1);
-            if (!line.startsWith('data:')) continue;
-            const data = line.slice(5).trim();
-            if (data === '[DONE]') { done = true; break; }
-            try {
-              const evt = JSON.parse(data);
-              const delta = evt?.choices?.[0]?.delta?.content;
-              if (typeof delta === 'string' && delta.length) {
-                output += delta;
-                emit('event', { delta });
-              }
-              const reasoning = evt?.choices?.[0]?.delta?.reasoning_content ?? evt?.choices?.[0]?.delta?.reasoning;
-              if (typeof reasoning === 'string' && reasoning.length) emit('reasoning', { reasoning });
-            } catch {
-              emit('event', { raw: data.slice(0, 2000) });
-            }
+            if (handleLine(line)) { done = true; break; }
           }
           if (done) break;
         }
+        // Audit 1.4: a server that ends the stream without a final newline
+        // would otherwise silently drop its trailing buffered line.
+        if (!done && buf.trim()) handleLine(buf.trim());
       } catch (e) {
         lastError = e;
         emit('stderr', `${label}: ${e.message}`);
@@ -376,6 +457,18 @@ export function createOpenAiHttpAdapter({ baseUrl, model, apiKey, label = 'opena
         controller = null;
       }
       exited = { code: 0, signal: null };
+      // Audit 3.1: record the completed turn (user + assistant) in the
+      // session's history, bounded to historyMessages messages per session.
+      // The map itself is bounded too: a long-lived node serving endless new
+      // sessionIds would otherwise grow it forever; evict the oldest session
+      // (Map insertion order) when full.
+      if (output.trim()) {
+        const next = [...messages, { role: 'assistant', content: output }];
+        if (!histories.has(sessionKey) && histories.size >= HISTORY_MAX_SESSIONS) {
+          histories.delete(histories.keys().next().value);
+        }
+        histories.set(sessionKey, next.slice(Math.max(0, next.length - historyMessages)));
+      }
       emit('exit', exited);
       return { output };
     },
@@ -474,10 +567,11 @@ export function createCliProcessAdapter({ command, args, promptMode = 'arg', lab
     kind: 'cli-process',
     label,
     command,
+    args,
     launch: async () => {
       if (verified) return;
       await new Promise((resolve, reject) => {
-        const probe = spawnAdapter(command, ['--version'], { cwd: cwd || undefined, env: { ...process.env, ...env }, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+        const probe = spawnAdapter(command, ['--version'], { cwd: cwd || undefined, env: spawnEnv(env), shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
         let out = '';
         probe.stdout?.on('data', (d) => { out += d; });
         const timer = setTimeout(() => { try { probe.kill(); } catch {} reject(new UhError(ERR.DSH_START_FAILED, `${command} --version did not answer within ${T.startup}ms`, { command })); }, T.startup);
@@ -500,10 +594,22 @@ export function createCliProcessAdapter({ command, args, promptMode = 'arg', lab
     prompt({ text }) {
       exited = null;
       stderrTail = [];
-      const fullArgs = promptMode === 'arg' ? [...args, String(text || '')] : args;
+      const promptText = String(text || '');
+      // Audit 1.2: in arg mode the prompt is the last argv element with no
+      // end-of-options separator, and the real CLIs' `--` handling is
+      // UNVERIFIED — so a prompt starting with `-` would be parsed as a flag.
+      // Reject it instead of injecting. Configurations whose CLI takes the
+      // prompt on stdin set promptMode: 'stdin' (audit 1.2) and are unaffected.
+      if (promptMode === 'arg' && /^-/.test(promptText)) {
+        throw new UhError(ERR.DSH_PROTOCOL_ERROR,
+          `${label}: prompt rejected — it begins with "-" and would arrive as a CLI flag (set adapter promptMode "stdin" for CLIs that read the prompt from stdin)`,
+          { label, promptHead: promptText.slice(0, 60) });
+      }
+      const fullArgs = promptMode === 'arg' ? [...args, promptText] : args;
+      const viaStdin = promptMode === 'stdin';
       child = spawnAdapter(command, fullArgs, {
         cwd: cwd || undefined,
-        env: { ...process.env, ...env },
+        env: spawnEnv(env),
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
         // Own process group on POSIX so cancel() can take down grandchildren
@@ -548,6 +654,11 @@ export function createCliProcessAdapter({ command, args, promptMode = 'arg', lab
         if (stderrTail.length > 50) stderrTail.shift();
         emit('stderr', String(d));
       });
+      if (viaStdin) {
+        // Audit 1.2: prompt mode for CLIs that read the prompt from stdin —
+        // the text is never an argv element, so it cannot be parsed as flags.
+        child.stdin?.end(promptText);
+      }
       child.on('error', (e) => {
         if (promptTimer) { clearTimeout(promptTimer); promptTimer = null; }
         emitExit({ code: null, signal: null, error: e });

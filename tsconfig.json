@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    // Audit 4.6: pragma-driven JSDoc checking — files opt in with
+    // `// @ts-check`. Full checkJs over core/ currently reports ~130 errors
+    // (implicit-any noise on the untyped seams); that burn-down is deferred.
+    "checkJs": false,
+    "noEmit": true,
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": false,
+    "noImplicitThis": true,
+    "noUnusedLocals": false,
+    "types": ["node"]
+  },
+  "include": ["core/**/*.mjs", "bin/**/*.mjs", "scripts/**/*.mjs", "shared/**/*.json"]
+}

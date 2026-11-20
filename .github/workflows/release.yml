@@ -6,11 +6,28 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write  # creates the GitHub Release and uploads assets
 
 jobs:
+  # Audit 2.1: a tag push must never publish artifacts built from untested code.
+  tests:
+    name: Test suite (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - run: npm test
+
   desktop-bundles:
     name: Portable USB/Desktop bundles
+    needs: [tests]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     strategy:
@@ -26,8 +43,8 @@ jobs:
           # v4 rejects duplicate names, and a collision fails the whole release.
           - { os: ubuntu-latest, targets: '--universal-only', artifact: 'dist-universal' }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Install bsdtar (GNU tar cannot write --format zip)
@@ -36,7 +53,7 @@ jobs:
       - name: Build portable bundle(s)
         run: node scripts/build-desktop.mjs ${{ matrix.targets }} --out dist
       - name: Stage artifacts for the release job
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ matrix.artifact }}
           path: |
@@ -46,30 +63,52 @@ jobs:
 
   android-apk:
     name: Release Android APK
+    needs: [tests]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
           java-version: 17
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
       # ubuntu-latest ships a preinstalled Android SDK with licenses accepted;
       # AGP resolves it via ANDROID_HOME (see ci.yml for the rationale).
+      # Audit 2.2: the keystore arrives as a base64 secret (a file path secret
+      # can never exist on the runner) and is decoded into $RUNNER_TEMP.
+      - name: Decode upload keystore
+        env:
+          UH_KEYSTORE_BASE64: ${{ secrets.UH_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/uh-upload.keystore.jks"
+          if [ -z "$UH_KEYSTORE_BASE64" ]; then
+            echo "UH_KEYSTORE_BASE64 secret is not set; refusing to build a fallback-signed release APK" >&2
+            exit 1
+          fi
+          printf '%s' "$UH_KEYSTORE_BASE64" | base64 -d > "$out"
+          echo "UH_KEYSTORE_PATH=$out" >> "$GITHUB_ENV"
       - name: Assemble signed release APK
         working-directory: android
         env:
-          UH_KEYSTORE_PATH: ${{ secrets.UH_KEYSTORE_PATH }}
           UH_KEYSTORE_PASSWORD: ${{ secrets.UH_KEYSTORE_PASSWORD }}
           UH_KEY_ALIAS: ${{ secrets.UH_KEY_ALIAS }}
           UH_KEY_PASSWORD: ${{ secrets.UH_KEY_PASSWORD }}
         run: ./gradlew assembleOnlineRelease
-      - name: Stage APK for the release job
-        uses: actions/upload-artifact@v4
+      # Audit 2.5: CycloneDX SBOM of the Android build's dependencies, shipped
+      # alongside the APK. UNVERIFIED locally (no JDK on the audit host); the
+      # CI android jobs exercise this plugin configuration first.
+      - name: Generate CycloneDX SBOM
+        working-directory: android
+        run: ./gradlew :app:cyclonedxBom
+      - name: Stage APK + SBOM for the release job
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dist-android
-          path: android/app/build/outputs/apk/online/release/*.apk
+          path: |
+            android/app/build/outputs/apk/online/release/*.apk
+            android/app/build/reports/**/*.json
           if-no-files-found: error
 
   publish:
@@ -77,13 +116,18 @@ jobs:
     needs: [desktop-bundles, android-apk]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write      # creates the GitHub Release and uploads assets
+      # Audit 2.5: provenance attestation signs via GitHub OIDC.
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Collect dist artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: dist-*
           path: dist-staged
@@ -92,8 +136,20 @@ jobs:
         run: |
           mkdir -p dist
           find dist-staged -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.apk' \) -exec cp {} dist/ \;
+          find dist-staged -type f -name 'bom-*.json' -exec cp {} dist/ \;
           ls -la dist/
       - name: Generate SHA256SUMS.txt and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/publish-release.mjs --out dist --publish
+      # Audit 2.5: SLSA-style build provenance attestation for every artifact
+      # (bundles, APK, SBOM) — signed by GitHub's OIDC identity and queryable
+      # via `gh attestation verify`. SHA256SUMS.txt stays as the plain-hash flow.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+        with:
+          subject-path: |
+            dist/**/*.zip
+            dist/**/*.tar.gz
+            dist/**/*.apk
+            dist/**/bom-*.json

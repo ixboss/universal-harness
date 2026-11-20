@@ -84,6 +84,34 @@ async function main() {
   }
   if (!files.length) fail(`no release artifacts (.zip/.tar.gz) found in ${opts.out}`);
 
+  // Audit 2.3: the Android in-app updater consumes
+  // android/universal-harness-update.json (fetched from
+  // releases/latest/download/...). AppUpdater verifies the APK's SHA-256 only
+  // when the manifest carries one — so a manifest with nulls silently
+  // disables that check. Fill sha256, sizeBytes, and the download URL for the
+  // online artifact here, from the staged APK, and ship the manifest as a
+  // release asset.
+  if (apkFile) {
+    const manifestPath = path.join(REPO, 'android', 'universal-harness-update.json');
+    if (fs.existsSync(manifestPath)) {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      manifest.artifacts = manifest.artifacts || {};
+      manifest.artifacts.online = manifest.artifacts.online || {};
+      const apkHash = await sha256File(apkFile);
+      const apkSize = fs.statSync(apkFile).size;
+      manifest.artifacts.online.url = `https://github.com/${REPO_SLUG}/releases/download/${TAG}/UniversalHarness-v${VERSION}-android.apk`;
+      manifest.artifacts.online.sha256 = apkHash;
+      manifest.artifacts.online.sizeBytes = apkSize;
+      if (apkHash.length !== 64 || !apkSize) fail('could not fill the update manifest from the staged APK');
+      const manifestOut = path.join(opts.out, 'universal-harness-update.json');
+      fs.writeFileSync(manifestOut, JSON.stringify(manifest, null, 2) + '\n');
+      if (!files.includes(manifestOut)) files.push(manifestOut);
+      process.stdout.write(`update manifest: sha256=${apkHash.slice(0, 16)}… sizeBytes=${apkSize}\n`);
+    } else {
+      process.stdout.write(`note: android/universal-harness-update.json missing (skipping manifest fill)\n`);
+    }
+  }
+
   // SHA256SUMS.txt over every artifact.
   const lines = [];
   for (const file of files.sort()) {

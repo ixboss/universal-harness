@@ -1,0 +1,16 @@
+# Audit 2.4: keep the two dependency surfaces this repo actually has up to
+# date. The Node runtime itself has zero npm dependencies; gradle drives the
+# Android build.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: gradle
+    directory: /android
+    schedule:
+      interval: weekly

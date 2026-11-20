@@ -1,0 +1,36 @@
+[UH-GATE-F] 2026-10-11T15:40:48.239Z gate F phase A start: payload=diagnostics/gate-f/payload-1.json, expect-kind=desktop
+[UH-GATE-F] 2026-10-11T15:40:49.925Z A: paired as device_89f28a72b5b7b2b601b778f9a6fe2aac scopes=[read-only,project-session-control,task-control,file-modify] nodeId=node_cb8e8fbbea8fe74643ec9ae5a0658317
+[UH-GATE-F] 2026-10-11T15:40:49.925Z PASS: A: the node advertises session.create
+[UH-GATE-F] 2026-10-11T15:40:49.926Z PASS: A: the node reports nodeKind=desktop (got desktop)
+[UH-GATE-F] 2026-10-11T15:40:50.022Z PASS: A: project.create over the network
+[UH-GATE-F] 2026-10-11T15:40:50.112Z PASS: A: session.create over the network
+[UH-GATE-F] 2026-10-11T15:40:50.112Z PASS: A: fresh session honestly reports dshAvailable=false
+[UH-GATE-F] 2026-10-11T15:40:50.317Z PASS: A: session.read separates UH metadata from dsh store state
+[UH-GATE-F] 2026-10-11T15:40:50.320Z A: session.list returned 1 session(s)
+[UH-GATE-F] 2026-10-11T15:40:50.764Z PASS: A: task.start over the network ({"kind":"task.start","taskId":"task_f2f291f6adf2a2da69df61fe1340d7e2","sessionId":"sess_3422fe66f42feeba89132dd5bb573e28","state":"queued"})
+[UH-GATE-F] 2026-10-11T15:40:50.765Z PASS: A: identical retry with the same clientRequestId returns the SAME task (idempotentReplay)
+[UH-GATE-F] 2026-10-11T15:40:50.766Z PASS: A: same clientRequestId with a materially different request is CONFLICT
+[UH-GATE-F] 2026-10-11T15:40:50.767Z PASS: A: task.queued event received live
+[UH-GATE-F] 2026-10-11T15:41:28.444Z A: task settled durably: task.failed reason="bundled node version matches manifest pin: expected v24.21.0, actual null" (R-21 provider boundary expected for a real dsh)
+[UH-GATE-F] 2026-10-11T15:41:28.444Z A: disconnected deliberately
+[UH-GATE-F] 2026-10-11T15:41:28.495Z PASS: A: reconnected and authenticated ({"kind":"auth.connect","deviceId":"device_89f28a72b5b7b2b601b778f9a6fe2aac","grantedScopes":["read-only","project-session-control","task-control","file-modify"],"protocolVersion":1})
+[UH-GATE-F] 2026-10-11T15:41:28.497Z PASS: A: full event replay after reconnect
+[UH-GATE-F] 2026-10-11T15:41:28.497Z PASS: A: replay returned 39 durable events
+[UH-GATE-F] 2026-10-11T15:41:28.497Z PASS: A: replay eventIds are unique
+[UH-GATE-F] 2026-10-11T15:41:28.498Z PASS: A: task.history page 1 bounded
+[UH-GATE-F] 2026-10-11T15:41:28.499Z PASS: A: paginated history has no duplicate events
+[UH-GATE-F] 2026-10-11T15:41:28.499Z PASS: A: full paginated history assembled (4 events)
+[UH-GATE-F] 2026-10-11T15:41:28.499Z PASS: A: task history is a subset of the durable replay
+[UH-GATE-F] 2026-10-11T15:41:28.529Z PASS: A: session.resume returns the linked continuation
+[UH-GATE-F] 2026-10-11T15:41:28.529Z PASS: A: the continuation session carries priorSessionId
+[UH-GATE-F] 2026-10-11T15:41:28.696Z PASS: A: lineage readable via session.read
+[UH-GATE-F] 2026-10-11T15:41:28.734Z PASS: A: task against the continuation runs under the NEW session id (dsh conversation not reopened)
+[UH-GATE-F] 2026-10-11T15:42:45.626Z gate F phase B start: second controller
+[UH-GATE-F] 2026-10-11T15:42:46.793Z B: paired independently as device_212b5ee65ec99e611f8e43d5d268939e (different device key)
+[UH-GATE-F] 2026-10-11T15:42:46.794Z PASS: B: controller B has its own deviceId
+[UH-GATE-F] 2026-10-11T15:42:46.794Z PASS: B: elevated scopes were never granted
+[UH-GATE-F] 2026-10-11T15:42:46.795Z PASS: B: replays the same durable event log from the start
+[UH-GATE-F] 2026-10-11T15:42:46.795Z PASS: B: the replay carries everything A saw (44 events vs A's 39)
+[UH-GATE-F] 2026-10-11T15:42:46.796Z PASS: B: inspects the SAME task started by A
+[UH-GATE-F] 2026-10-11T15:42:46.831Z PASS: B: the same clientRequestId under B device created its own task (device-scoped idempotency)
+[UH-GATE-F] 2026-10-11T15:42:46.831Z B: same id created its own task task_3ca0f2986614bc6c8e6b485d9d74053d (expected, device-scoped)

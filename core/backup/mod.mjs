@@ -31,6 +31,8 @@ const BACKED_UP = [
  * @param {Object} opts { root, p, label, log }
  * @returns {Promise<{ref:string, manifest:Object, files:string[]}>}
  */
+function consoleShim() { return { info() {}, warn() {}, debug() {}, error() {} }; }
+
 export async function createBackup({ root, p, label, log = consoleShim() }) {
   const backupsDir = (p && p.backups) || path.join(root, 'data', 'backups');
   ensureDir(backupsDir);

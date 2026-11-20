@@ -118,5 +118,22 @@ Verification status: executed against a **Windows desktop node** (localhost TLS)
 and against the **physical moto g 5G plus** (nairo, Android 11 / API 30,
 arm64-v8a) over the real Wi-Fi LAN — **28/28 assertions across both phases,
 0 FAIL, 2026-10-11**; the device node reported `nodeKind=android`. Retained
-transcripts: `diagnostics/gate-f/gatef-state.json.evidence.txt` (desktop) and
-`diagnostics/gate-f/gatef-device-evidence.txt` (device).
+transcripts: `docs/evidence/gatef-state.json.evidence.txt` (desktop) and
+`docs/evidence/gatef-device-evidence.txt` (device).
+
+## `task-control-experiment.mjs` — audit Phase 0.1 code-execution experiment
+
+Proves (or refutes) the audit hypothesis that a paired device holding only the
+`task-control` scope can cause real code execution on the node host. It drives
+the production path end to end on a throwaway temp root — real server, real
+scope gate, the exact `buildExecutorFactory` that `uh serve` builds, and a real
+CLI-adapter child spawn — with a stub harness standing in for the agent CLI.
+The stub records its cwd, whether the node's `process.env` leaks into it,
+whether it can read the node's Ed25519 private key, and whether it can write
+outside the project directory; the script prints `UH-TC-EXP nn:` evidence lines.
+
+Run:
+
+    node tests/manual/task-control-experiment.mjs
+
+Result 2026-11-14 (Windows x64): **CONFIRMED** — see `docs/THREAT-MODEL.md` (T-1).

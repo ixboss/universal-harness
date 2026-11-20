@@ -95,10 +95,11 @@ Nothing here says "Verified" until a real test produces evidence recorded in [TE
 | 2026-10-01 | Android arm64 provider prompt / streaming / completion | Provider balance API returns `is_available: false`, `total_balance` `0.00 USD` for the only available credential (R-21) | **Not executed — externally blocked (provider account funding), not a runtime defect** |
 | — | Protocol v1 round-trips on a live node | Phase 2 checkpoint: server + tests (memory/stdio transports) | **Automated-tested** (tests/protocol-core, tests/server; no network transport yet) |
 | 2026-09-30 | Android node: TLS listener, pinned pairing, deny-by-default scopes, durable replay, task survival, NSD advertisement on real hardware | Gate E instrumented suite 9/9 on the physical moto g 5G plus over Wi-Fi; workstation LAN script 22/22 (`tests/manual/gate-e-host.mjs`); evidence at `files/uh-state/gate-e-evidence.txt` | **Executed (real device + cross-device LAN)** |
-| 2026-10-11 | Phase 3C controller gate: a real controller (core/client UniversalClient, `uh connect`-equivalent) pairs, authenticates, creates/reads/resumes sessions (linked continuation), starts a task, observes events, disconnects, reconnects, replays missed events, pages task history; second controller verifies multi-device isolation | `tests/manual/gate-f-controller.mjs` against a Windows desktop node over TLS (localhost): phase A 22/22 + phase B 6/6, **28 PASS / 0 FAIL**, exit 0 both phases; retained transcript `diagnostics/gate-f/gatef-state.json.evidence.txt` | **Executed (desktop node); provider stages externally blocked (R-21)** |
-| 2026-10-11 | Live `uh connect` controller CLI end-to-end: pair, nodes, status, projects, sessions create/read/resume (linked continuation), idempotent `tasks start`, `tasks history`, `events` replay, plus the CONFLICT / TASK_NOT_FOUND / NOT_FOUND error paths | All happy-path subcommands exit 0; error-path subcommands exit 1 with the expected protocol codes; retained transcript `diagnostics/gate-f/uh-connect-e2e.evidence.txt` | **Executed (desktop node)** |
-| 2026-10-11 | Phase 3C controller gate against the physical Android node over Wi-Fi | **Executed** on the moto g 5G plus (nairo, Android 11 / API 30, arm64-v8a, physical) over the real LAN: `tests/manual/gate-f-controller.mjs` phase A 22/22 + phase B 6/6 = **28 PASS / 0 FAIL**, exit 0; the node reported `nodeKind=android`; linked continuation, `clientRequestId` idempotency, durable replay, cursor-paginated history and multi-controller isolation all verified. Evidence: `diagnostics/gate-f/gatef-device-evidence.txt` | **Executed (real Android device over Wi-Fi)** |
-| — | Linux x64 full chain | not executed — no Linux host (WSL not installed) | **NOT TESTED** |
+| 2026-10-11 | Phase 3C controller gate: a real controller (core/client UniversalClient, `uh connect`-equivalent) pairs, authenticates, creates/reads/resumes sessions (linked continuation), starts a task, observes events, disconnects, reconnects, replays missed events, pages task history; second controller verifies multi-device isolation | `tests/manual/gate-f-controller.mjs` against a Windows desktop node over TLS (localhost): phase A 22/22 + phase B 6/6, **28 PASS / 0 FAIL**, exit 0 both phases; retained transcript `docs/evidence/gatef-state.json.evidence.txt` | **Executed (desktop node); provider stages externally blocked (R-21)** |
+| 2026-10-11 | Live `uh connect` controller CLI end-to-end: pair, nodes, status, projects, sessions create/read/resume (linked continuation), idempotent `tasks start`, `tasks history`, `events` replay, plus the CONFLICT / TASK_NOT_FOUND / NOT_FOUND error paths | All happy-path subcommands exit 0; error-path subcommands exit 1 with the expected protocol codes; retained transcript `docs/evidence/uh-connect-e2e.evidence.txt` | **Executed (desktop node)** |
+| 2026-10-11 | Phase 3C controller gate against the physical Android node over Wi-Fi | **Executed** on the moto g 5G plus (nairo, Android 11 / API 30, arm64-v8a, physical) over the real LAN: `tests/manual/gate-f-controller.mjs` phase A 22/22 + phase B 6/6 = **28 PASS / 0 FAIL**, exit 0; the node reported `nodeKind=android`; linked continuation, `clientRequestId` idempotency, durable replay, cursor-paginated history and multi-controller isolation all verified. Evidence: `docs/evidence/gatef-device-evidence.txt` | **Executed (real Android device over Wi-Fi)** |
+| 2026-11-14 | Linux x64 automated suite (Node 22) | 2026-11-14 audit run: `node --test tests/*.test.mjs` — **249 passed, 1 skipped, 0 failed** on Linux x64 / Node 22. `uh smoke` not executed (needs a funded provider credential) | **Automated suite pass; smoke NOT EXECUTED** |
+| — | Linux x64 full chain | full-chain smoke not executed — no dedicated Linux host (WSL not installed) | **NOT TESTED** |
 | — | macOS arm64 full chain | not executed — no macOS host (acceptable per brief §20) | **NOT TESTED** |
 
 Rows are added as real test evidence accumulates; a claim may only move to
@@ -120,3 +121,16 @@ documentation alone.
 | Windows → Android round trip | **NOT EXECUTED** — requires the physical device (S4 outstanding) |
 | Linux / macOS | **NOT TESTED** — no host (R-22) |
 | Real exFAT / no-symlink matrix | **NOT TESTED** — no exFAT device (R-04 stays *Mitigating*) |
+
+## Secure storage backends (2026-11-14 audit round)
+
+`core/secrets/mod.mjs` selects a backend per platform and fails explicitly
+(`SECURE_STORAGE_UNAVAILABLE`) rather than ever falling back to plaintext.
+`UH_SECRET_BACKEND` overrides the default by name.
+
+| Backend | Platform | Status |
+|---|---|---|
+| `dpapi` (PowerShell child) | Windows | **Verified** — automated DPAPI round trip incl. the apostrophe-path regression (`tests/security.test.mjs`) |
+| `keychain` (`security` CLI) | macOS | **UNVERIFIED** — no macOS host; code paths reviewed only. Items: service `com.universal-harness.secrets`, account = secret name; the value rides as the `-w` argv element (no stdin mode in the CLI) |
+| `libsecret` (`secret-tool`) | Linux | **UNVERIFIED** — no Linux host; requires `libsecret-tools` on PATH. Secret is fed on stdin, never on the command line |
+| none | other platforms | **Verified** — fails explicitly (`tests/security.test.mjs`) |
